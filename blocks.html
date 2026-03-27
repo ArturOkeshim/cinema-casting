@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinema Casting - Blocks</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b1020;
+      color: #e7ecff;
+    }
+
+    .layout {
+      width: min(920px, 92vw);
+      margin: 26px auto 40px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      color: #b9c5f5;
+    }
+
+    .actions {
+      margin-bottom: 16px;
+    }
+
+    .link-btn {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 9px 14px;
+      background: #2a355f;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .empty {
+      padding: 16px;
+      border: 1px solid #44548f;
+      border-radius: 10px;
+      background: #151b31;
+      color: #c7d0f6;
+    }
+
+    .blocks {
+      display: grid;
+      gap: 12px;
+    }
+
+    .block {
+      border: 1px solid #2a355f;
+      border-left: 4px solid #4f7cff;
+      border-radius: 12px;
+      background: #151b31;
+      padding: 14px 14px 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    .role {
+      margin: 0 0 8px;
+      font-size: 15px;
+      color: #9fc0ff;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .text {
+      margin: 0;
+      white-space: pre-wrap;
+      line-height: 1.5;
+      color: #eef2ff;
+      font-size: 15px;
+    }
+
+    .annotation {
+      margin: 0;
+      padding: 2px 10px;
+      font-style: italic;
+      font-size: 13px;
+      color: #6b7db3;
+      line-height: 1.5;
+    }
+
+    .inline-annotation {
+      font-style: italic;
+      font-size: 13px;
+      color: #4a5a8a;
+    }
+
+    .role-picker {
+      margin-bottom: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #151b31;
+      border: 1px solid #2a355f;
+    }
+
+    .role-picker-label {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: #b9c5f5;
+    }
+
+    .confirm-btn {
+      margin-top: 14px;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      background: #34d399;
+      color: #0b1020;
+    }
+
+    .confirm-btn:hover {
+      background: #6ee7b7;
+    }
+
+    .role-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #44548f;
+      background: transparent;
+      color: #b9c5f5;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .chip:hover {
+      border-color: #4f7cff;
+      color: #e7ecff;
+    }
+
+    .chip.active {
+      background: #4f7cff;
+      border-color: #4f7cff;
+      color: #fff;
+    }
+
+    .block.mine {
+      border-left-color: #34d399;
+      background: #0e1f18;
+    }
+
+    .block.mine .role {
+      color: #34d399;
+    }
+
+    .block.dimmed {
+      opacity: 0.35;
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <h1>Разбор по блокам</h1>
+    <p class="sub">Каждая реплика выделена отдельным блоком в порядке сцены.</p>
+    <div class="actions">
+      <a class="link-btn" href="./index.html">Назад к вводу</a>
+    </div>
+    <div id="rolePicker" class="role-picker" hidden>
+      <span class="role-picker-label">Я читаю за:</span>
+      <div id="roleChips" class="role-chips"></div>
+      <button id="confirmRoleBtn" class="confirm-btn" hidden>Подтвердить роль →</button>
+    </div>
+    <section id="blocksContainer" class="blocks"></section>
+  </main>
+
+  <script type="module" src="./blocks.js"></script>
+</body>
+</html>

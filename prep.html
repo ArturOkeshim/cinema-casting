@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinema Casting - Подготовка</title>
+  <style>
+    :root {
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b1020;
+      color: #e7ecff;
+    }
+
+    .layout {
+      width: min(820px, 92vw);
+      margin: 26px auto 60px;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 24px; }
+
+    .sub {
+      margin: 0 0 6px;
+      color: #b9c5f5;
+      font-size: 14px;
+    }
+
+    .actor-role {
+      display: inline-block;
+      margin-bottom: 20px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: #34d399;
+      color: #0b1020;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .top-actions {
+      margin-bottom: 20px;
+    }
+
+    .link-btn {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 8px 14px;
+      background: #2a355f;
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .segments { display: grid; gap: 16px; }
+
+    .segment {
+      border: 1px solid #2a355f;
+      border-radius: 14px;
+      background: #151b31;
+      overflow: hidden;
+    }
+
+    .segment-header {
+      padding: 12px 16px;
+      background: #1a2240;
+      border-bottom: 1px solid #2a355f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .segment-number {
+      font-size: 13px;
+      font-weight: 700;
+      color: #9fc0ff;
+    }
+
+    .segment-status {
+      margin-left: auto;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .segment-status.pending {
+      background: #2a355f;
+      color: #b9c5f5;
+    }
+
+    .segment-status.ready {
+      background: #0e1f18;
+      color: #34d399;
+    }
+
+    .lines {
+      padding: 12px 16px;
+      display: grid;
+      gap: 8px;
+      border-bottom: 1px solid #2a355f;
+    }
+
+    .line-row { display: flex; gap: 10px; align-items: baseline; }
+
+    .line-role {
+      font-size: 12px;
+      font-weight: 700;
+      color: #9fc0ff;
+      min-width: 110px;
+      flex-shrink: 0;
+    }
+
+    .line-text {
+      font-size: 14px;
+      color: #c7d0f6;
+      line-height: 1.5;
+    }
+
+    .inline-annotation {
+      font-style: italic;
+      font-size: 12px;
+      color: #4a5a8a;
+    }
+
+    .controls {
+      padding: 12px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .btn-record { background: #4f7cff; color: #fff; }
+    .btn-record:hover { background: #6b94ff; }
+    .btn-record.recording { background: #ef4444; animation: pulse 1s infinite; }
+    .btn-stop { background: #374270; color: #e7ecff; }
+    .btn-stop:hover { background: #44548f; }
+    .btn-rerecord { background: #2a355f; color: #b9c5f5; font-size: 13px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .upload-label {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 10px;
+      background: #2a355f;
+      color: #b9c5f5;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .upload-label:hover { background: #374270; color: #e7ecff; }
+
+    .upload-input { display: none; }
+
+    .audio-player {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    audio { height: 36px; border-radius: 8px; max-width: 280px; }
+
+    .file-name {
+      font-size: 12px;
+      color: #6b7db3;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .empty {
+      padding: 16px;
+      border: 1px solid #44548f;
+      border-radius: 10px;
+      background: #151b31;
+      color: #c7d0f6;
+    }
+
+    .footer {
+      margin-top: 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .btn-proceed {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 12px;
+      background: #34d399;
+      color: #0b1020;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-proceed:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .progress-label {
+      font-size: 14px;
+      color: #b9c5f5;
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <h1>Подготовка голосов партнёров</h1>
+    <p class="sub">Запиши или загрузи аудио для каждого сегмента — это реплики, которые прозвучат пока ты готовишься к своей следующей.</p>
+    <div id="actorRoleLabel"></div>
+    <div class="top-actions">
+      <a class="link-btn" href="./blocks.html">← Назад к сцене</a>
+    </div>
+    <div id="segmentsContainer" class="segments"></div>
+    <div class="footer">
+      <button id="proceedBtn" class="btn-proceed" disabled>Начать репетицию →</button>
+      <span id="progressLabel" class="progress-label"></span>
+    </div>
+  </main>
+
+  <script type="module" src="./prep.js"></script>
+</body>
+</html>
