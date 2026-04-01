@@ -1,3 +1,5 @@
+import { storePartnerAudio, clearAllAudio } from './audioDb.js';
+
 const BLOCKS_STORAGE_KEY = "cinemaCasting.roleBlocks";
 const SELECTED_ROLE_KEY = "cinemaCasting.selectedRole";
 
@@ -23,7 +25,11 @@ function readSession() {
 }
 
 function extractSpeakableText(text) {
-  return text.replace(/\[\[.*?\]\]/g, "").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/\[\[.*?\]\]/g, "")
+    .replace(/\[(?!\[).*?\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function escapeHtml(str) {
@@ -211,11 +217,28 @@ function renderSegments(segments) {
 }
 
 const { blocks, role } = readSession();
+let segments = [];
 
 if (!role) {
   segmentsContainer.innerHTML = `<div class="empty">Роль не выбрана. <a href="./blocks.html" style="color:#9fc0ff">Вернись назад</a> и выбери роль.</div>`;
 } else {
   actorRoleLabel.innerHTML = `<span class="actor-role">Ты читаешь за: ${escapeHtml(role)}</span>`;
-  const segments = buildSegments(blocks, role);
+  segments = buildSegments(blocks, role);
   renderSegments(segments);
 }
+
+proceedBtn.addEventListener('click', async () => {
+  proceedBtn.disabled = true;
+  progressLabel.textContent = 'Сохраняем аудио…';
+  try {
+    await clearAllAudio();
+    for (const [segmentId, { blob }] of audioStore) {
+      await storePartnerAudio(segmentId, blob);
+    }
+    window.location.href = './rehearsal.html';
+  } catch (err) {
+    console.error(err);
+    progressLabel.textContent = 'Ошибка сохранения. Попробуйте снова.';
+    updateProgress(segments.length);
+  }
+});

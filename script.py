@@ -19,10 +19,12 @@ load_dotenv()
 
 CHUNK_SIZE = 4096
 # Базовые пороги; для длинных фраз см. adaptive_thresholds()
-MIN_LEN_RATIO = 0.8
-FINAL_SCORE_THRESHOLD = 0.86
+MIN_LEN_RATIO = 0.75
+FINAL_SCORE_THRESHOLD = 0.82
 TAIL_WINDOW = 6
 TAIL_WORDS = 3
+# Более мягкое условие: допускаем частичный пропуск служебных слов в хвосте.
+MIN_TAIL_SCORE = 0.6
 
 
 def normalize_text(text: str) -> str:
@@ -37,8 +39,8 @@ def adaptive_thresholds(reference: str) -> tuple[float, float]:
     if n <= 15:
         return MIN_LEN_RATIO, FINAL_SCORE_THRESHOLD
     if n <= 50:
-        return 0.75, 0.80
-    return 0.68, 0.74
+        return 0.72, 0.77
+    return 0.66, 0.72
 
 
 def lcs_length(a_words: list[str], b_words: list[str]) -> int:
@@ -55,28 +57,29 @@ def lcs_length(a_words: list[str], b_words: list[str]) -> int:
 
 
 def tail_score(ref_words: list[str], hyp_words: list[str], tail_words_count: int, tail_window: int) -> float:
+    """Покрытие последних tail_words_count слов эталона в окне гипотезы (пословно, LCS)."""
     if not ref_words or not hyp_words:
         return 0.0
-    tail = " ".join(ref_words[-tail_words_count:])
-    window = " ".join(hyp_words[-tail_window:])
-    return SequenceMatcher(None, tail, window).ratio()
+    tail_words = ref_words[-tail_words_count:]
+    window_words = hyp_words[-tail_window:]
+    return lcs_length(tail_words, window_words) / len(tail_words)
 
 
-def calc_score(reference: str, hypothesis: str) -> tuple[float, float, float, float]:
+def calc_score(reference: str, hypothesis: str) -> tuple[float, float, float, float, float]:
     ref_norm = normalize_text(reference)
     hyp_norm = normalize_text(hypothesis)
     ref_words = ref_norm.split()
     hyp_words = hyp_norm.split()
 
     if not ref_words or not hyp_words:
-        return 0.0, 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0
 
     len_ratio = len(hyp_words) / max(len(ref_words), 1)
     coverage = lcs_length(ref_words, hyp_words) / len(ref_words)
     fuzzy = SequenceMatcher(None, ref_norm, hyp_norm).ratio()
     tail = tail_score(ref_words, hyp_words, tail_words_count=min(TAIL_WORDS, len(ref_words)), tail_window=TAIL_WINDOW)
-    score = 0.45 * coverage + 0.35 * fuzzy + 0.20 * tail
-    return score, coverage, fuzzy, len_ratio
+    score = 0.30 * coverage + 0.35 * fuzzy + 0.35 * tail
+    return score, coverage, fuzzy, len_ratio, tail
 
 
 def play_done_sound() -> None:
@@ -131,11 +134,12 @@ async def main() -> None:
         with segments_lock:
             final_segments.append(transcript.strip())
             full_hypothesis = " ".join(final_segments)
-        score, coverage, fuzzy, len_ratio = calc_score(target_text, full_hypothesis)
-        if len_ratio >= min_len_ratio and score >= score_threshold:
+        score, coverage, fuzzy, len_ratio, tail = calc_score(target_text, full_hypothesis)
+        if len_ratio >= min_len_ratio and score >= score_threshold and tail >= MIN_TAIL_SCORE:
             print(
                 "Чтение завершено "
-                f"(score={score:.2f}, coverage={coverage:.2f}, fuzzy={fuzzy:.2f}, len={len_ratio:.2f})."
+                f"(score={score:.2f}, coverage={coverage:.2f}, fuzzy={fuzzy:.2f}, "
+                f"tail={tail:.2f}, len={len_ratio:.2f})."
             )
             play_done_sound()
             loop.call_soon_threadsafe(done.set)

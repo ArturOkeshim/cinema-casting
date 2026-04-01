@@ -35,9 +35,13 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-// Extracts only the speakable text (strips [[...]] markers).
+// Extracts only the speakable text (strips [[...]] and [...] markers).
 export function extractSpeakableText(text) {
-  return text.replace(/\[\[.*?\]\]/g, "").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/\[\[.*?\]\]/g, "")
+    .replace(/\[(?!\[).*?\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Renders [[...]] markers as greyed-out inline spans.

@@ -85,6 +85,16 @@
       font-size: 14px;
       color: #b9c5f5;
     }
+    .quick-link {
+      display: inline-block;
+      margin-top: 14px;
+      color: #9fc0ff;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .quick-link:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -99,6 +109,7 @@
       <button id="processBtn" type="button">Обработать</button>
       <span id="status" class="status">Ожидается ввод текста.</span>
     </div>
+    <a class="quick-link" href="./eos_test.html">Открыть тест завершения речи</a>
   </main>
 
   <script type="module" src="./app.js"></script>

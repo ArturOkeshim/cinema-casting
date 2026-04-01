@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EOS Test - Cinema Casting</title>
+  <style>
+    :root { font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b1020;
+      color: #e7ecff;
+    }
+    .wrap {
+      width: min(920px, 94vw);
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    .sub { margin: 0 0 20px; color: #aeb9e8; }
+    .panel {
+      background: #121936;
+      border: 1px solid #2c3866;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #3a4a80;
+      background: #0e1430;
+      color: #eef2ff;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 15px;
+    }
+    textarea { min-height: 82px; resize: vertical; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #4f7cff;
+      color: #fff;
+    }
+    button.secondary { background: #2f3d73; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      color: #c9d3ff;
+    }
+    .status {
+      font-weight: 700;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #2b2f4c;
+      display: inline-block;
+    }
+    .status.ok { background: #1f5f46; color: #d8ffeb; }
+    .status.err { background: #6d2d3a; color: #ffdce2; }
+    .log {
+      white-space: pre-wrap;
+      max-height: 320px;
+      overflow: auto;
+      background: #0a0f26;
+      border: 1px solid #25315d;
+      border-radius: 8px;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Тест завершения речи (EOS)</h1>
+    <p class="sub">Изолированная проверка авто-завершения реплики по Speechmatics + scorer.</p>
+
+    <section class="panel">
+      <label for="targetText"><b>Эталонная реплика</b></label>
+      <textarea id="targetText">Я пришел сюда не извиняться, а сказать правду.</textarea>
+      <p id="thresholds" class="mono"></p>
+      <div class="row">
+        <button id="startBtn">Старт прослушивания</button>
+        <button id="stopBtn" class="secondary" disabled>Стоп</button>
+        <button id="clearBtn" class="secondary">Сброс логов</button>
+      </div>
+      <p style="margin: 10px 0 0;">
+        <span id="status" class="status">Ожидание</span>
+      </p>
+    </section>
+
+    <section class="panel">
+      <p><b>Накопленная гипотеза</b></p>
+      <div id="hypothesis" class="mono"></div>
+      <p><b>Метрики</b></p>
+      <div id="metrics" class="mono">score=0.00 coverage=0.00 fuzzy=0.00 tail=0.00 len=0.00</div>
+    </section>
+
+    <section class="panel">
+      <p><b>Симуляция AddTranscript (без микрофона)</b></p>
+      <div class="row">
+        <input id="simInput" type="text" placeholder="Введите финальный сегмент и нажмите 'Добавить'" />
+        <button id="simBtn" class="secondary">Добавить</button>
+      </div>
+      <p class="mono" style="margin-bottom: 0;">Эта кнопка помогает проверить только алгоритм принятия решения.</p>
+    </section>
+
+    <section class="panel">
+      <p><b>Лог</b></p>
+      <div id="log" class="log mono"></div>
+    </section>
+  </main>
+
+  <script type="module" src="./eos_test.js"></script>
+</body>
+</html>

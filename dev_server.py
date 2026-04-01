@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib import error, request
 
@@ -12,6 +13,34 @@ PORT = 8000
 
 
 class AppHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/config":
+            self._send_json(200, {
+                "speechmatics_key": os.getenv("SPEECHMATICS_API_KEY", ""),
+            })
+            return
+        if self.path == "/api/sm-token":
+            api_key = os.getenv("SPEECHMATICS_API_KEY", "").strip()
+            if not api_key:
+                self._send_json(500, {"error": "SPEECHMATICS_API_KEY is not set in .env"})
+                return
+            try:
+                token = self._create_speechmatics_rt_token(api_key)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(502, {"error": f"Failed to create Speechmatics token: {exc}"})
+                return
+            ttl_seconds = 600
+            self._send_json(
+                200,
+                {
+                    "token": token,
+                    "ttl_seconds": ttl_seconds,
+                    "expires_at_ms": int((time.time() + ttl_seconds) * 1000),
+                },
+            )
+            return
+        super().do_GET()
+
     def _send_json(self, code: int, payload: dict):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -19,6 +48,23 @@ class AppHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _create_speechmatics_rt_token(self, api_key: str) -> str:
+        req = request.Request(
+            url="https://mp.speechmatics.com/v1/api_keys?type=rt",
+            data=json.dumps({"ttl": 600}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        with request.urlopen(req, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        token = (payload.get("key_value") or "").strip()
+        if not token:
+            raise RuntimeError("Speechmatics returned empty temporary token")
+        return token
 
     def do_POST(self):
         if self.path != "/api/llm":
