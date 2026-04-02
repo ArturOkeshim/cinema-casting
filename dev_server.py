@@ -8,8 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-HOST = "127.0.0.1"
-PORT = 8000
+# Production: keep BIND_HOST=127.0.0.1 and put nginx in front.
+HOST = os.getenv("BIND_HOST", "127.0.0.1")
+PORT = int(os.getenv("PORT", "8000"))
 
 
 class AppHandler(SimpleHTTPRequestHandler):

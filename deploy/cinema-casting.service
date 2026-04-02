@@ -1,0 +1,20 @@
+[Unit]
+Description=Cinema Casting (Python static + API)
+After=network.target
+
+[Service]
+Type=simple
+# User with read access to the repo and .env
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/cinema-casting
+EnvironmentFile=-/opt/cinema-casting/.env
+# Explicit bind (optional if .env already sets these)
+Environment=BIND_HOST=127.0.0.1
+Environment=PORT=8000
+ExecStart=/opt/cinema-casting/.venv/bin/python /opt/cinema-casting/dev_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
