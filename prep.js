@@ -14,6 +14,25 @@ const audioStore = new Map();
 // Active MediaRecorder instance.
 let activeRecorder = null;
 
+/** Один микрофон на всю страницу подготовки (меньше запросов разрешений в Safari iOS). */
+let prepMicStream = null;
+
+async function ensurePrepMicStream() {
+  if (prepMicStream?.getAudioTracks().some((t) => t.readyState === 'live')) {
+    return prepMicStream;
+  }
+  prepMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  return prepMicStream;
+}
+
+function releasePrepMic() {
+  if (!prepMicStream) return;
+  prepMicStream.getTracks().forEach((t) => t.stop());
+  prepMicStream = null;
+}
+
+window.addEventListener('pagehide', releasePrepMic);
+
 function readSession() {
   try {
     const blocks = JSON.parse(sessionStorage.getItem(BLOCKS_STORAGE_KEY) || "[]");
@@ -111,15 +130,28 @@ function renderAudioPlayer(segmentId, url, source, controlsEl, total) {
 }
 
 async function startRecording(segmentId, controlsEl, total) {
+  if (activeRecorder && activeRecorder.state !== "inactive") {
+    alert("Сначала нажми «Стоп» в сегменте, где идёт запись.");
+    return;
+  }
+
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await ensurePrepMicStream();
   } catch {
     alert("Нет доступа к микрофону. Разреши доступ и попробуй снова.");
     return;
   }
 
-  const recorder = new MediaRecorder(stream);
+  const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+    ? "audio/webm"
+    : "audio/mp4";
+  let recorder;
+  try {
+    recorder = new MediaRecorder(stream, { mimeType });
+  } catch {
+    recorder = new MediaRecorder(stream);
+  }
   activeRecorder = recorder;
   const chunks = [];
 
@@ -128,7 +160,6 @@ async function startRecording(segmentId, controlsEl, total) {
   };
 
   recorder.onstop = () => {
-    stream.getTracks().forEach((t) => t.stop());
     activeRecorder = null;
     const blob = new Blob(chunks, { type: "audio/webm" });
     const url = storeAudio(segmentId, blob, "recorded", total);
