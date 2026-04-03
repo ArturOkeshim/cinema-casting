@@ -222,26 +222,41 @@ async function processScriptText(sceneText) {
   return blocks;
 }
 
-processBtn.addEventListener("click", async () => {
-  const text = scriptInput.value.trim();
-  if (!text) {
-    setStatus("Добавь текст перед обработкой.");
-    scriptInput.focus();
-    return;
-  }
+/**
+ * @param {{ onProcessed?: () => void }} [opts] — SPA: перейти к блокам без reload.
+ */
+export function mountScriptView(opts = {}) {
+  const { onProcessed } = opts;
 
-  processBtn.disabled = true;
-  setStatus("Обрабатываем текст...");
+  processBtn.addEventListener("click", async () => {
+    const text = scriptInput.value.trim();
+    if (!text) {
+      setStatus("Добавь текст перед обработкой.");
+      scriptInput.focus();
+      return;
+    }
 
-  try {
-    const blocks = await processScriptText(text);
-    setStatus(`Готово: найдено блоков — ${blocks.length}.`);
-    window.location.href = "./blocks.html";
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Неизвестная ошибка.";
-    setStatus(`Ошибка: ${message}`);
-    console.error(error);
-  } finally {
-    processBtn.disabled = false;
-  }
-});
+    processBtn.disabled = true;
+    setStatus("Обрабатываем текст...");
+
+    try {
+      const blocks = await processScriptText(text);
+      setStatus(`Готово: найдено блоков — ${blocks.length}.`);
+      if (onProcessed) {
+        onProcessed();
+      } else {
+        window.location.href = "./blocks.html";
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Неизвестная ошибка.";
+      setStatus(`Ошибка: ${message}`);
+      console.error(error);
+    } finally {
+      processBtn.disabled = false;
+    }
+  });
+}
+
+if (!document.getElementById("spaRoot")) {
+  mountScriptView();
+}

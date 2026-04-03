@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinema Casting</title>
+  <link rel="stylesheet" href="./spa.css" />
+</head>
+<body>
+  <div id="spaRoot">
+    <section id="viewHome" class="spa-view spa-home is-active" aria-label="Ввод текста">
+      <main class="card">
+        <h1>Подготовка текста пробы</h1>
+        <p>Вставь текст сцены, затем нажми кнопку, чтобы передать его в обработку.</p>
+
+        <label for="scriptInput">Текст пробы</label>
+        <textarea id="scriptInput" placeholder="Вставь сюда текст..."></textarea>
+
+        <div class="actions">
+          <button id="processBtn" type="button">Обработать</button>
+          <span id="status" class="status">Ожидается ввод текста.</span>
+        </div>
+        <a class="quick-link" href="./eos_test.html">Открыть тест завершения речи</a>
+      </main>
+    </section>
+
+    <section id="viewBlocks" class="spa-view" aria-label="Блоки сцены">
+      <main class="layout">
+        <h1>Разбор по блокам</h1>
+        <p class="sub">Каждая реплика выделена отдельным блоком в порядке сцены.</p>
+        <div class="actions">
+          <a class="link-btn" href="#" id="spaBlocksBack">Назад к вводу</a>
+        </div>
+        <div id="rolePicker" class="role-picker" hidden>
+          <span class="role-picker-label">Я читаю за:</span>
+          <div id="roleChips" class="role-chips"></div>
+          <button id="confirmRoleBtn" class="confirm-btn" hidden>Подтвердить роль →</button>
+        </div>
+        <section id="blocksContainer" class="blocks"></section>
+      </main>
+    </section>
+
+    <section id="viewPrep" class="spa-view" aria-label="Подготовка">
+      <main class="layout">
+        <h1>Подготовка голосов партнёров</h1>
+        <p class="sub">Запиши или загрузи аудио для каждого сегмента — это реплики, которые прозвучат пока ты готовишься к своей следующей.</p>
+        <div id="actorRoleLabel"></div>
+        <div class="top-actions">
+          <a class="link-btn" href="#" id="spaPrepBack">← Назад к сцене</a>
+        </div>
+        <div id="segmentsContainer" class="segments"></div>
+        <div class="footer">
+          <button id="proceedBtn" class="btn-proceed" disabled>Начать репетицию →</button>
+          <span id="progressLabel" class="progress-label"></span>
+        </div>
+      </main>
+    </section>
+
+    <section id="viewRehearsal" class="spa-view" aria-label="Репетиция">
+      <main id="rehearsalView" class="layout">
+        <div class="rh-header">
+          <span id="actorBadge" class="actor-badge"></span>
+          <span id="stepCounter" class="step-counter"></span>
+        </div>
+
+        <section class="scene-overview">
+          <div class="scene-summary">
+            <div id="sceneSummaryMain" class="scene-summary-main">Загрузка сцены…</div>
+            <div id="sceneSummaryNext" class="scene-summary-next"></div>
+          </div>
+          <div id="sceneTimeline" class="scene-timeline"></div>
+        </section>
+
+        <section id="loadingSection">
+          <p id="loadingText" class="loading-text">Загрузка…</p>
+        </section>
+
+        <section id="partnerSection" hidden>
+          <p class="section-label">▶ Партнёр</p>
+          <div id="partnerLines" class="lines-list"></div>
+        </section>
+
+        <section id="actorSection" hidden>
+          <p class="section-label">⏺ Ваша реплика</p>
+          <div id="actorLine" class="actor-line"></div>
+          <div id="liveTranscript" class="live-transcript"></div>
+          <div class="rec-indicator">
+            <span class="rec-dot"></span>
+            <span id="recStatus">Слушаем…</span>
+          </div>
+          <button id="skipBtn" class="btn-skip">Готово →</button>
+        </section>
+      </main>
+
+      <main id="resultView" class="layout" hidden>
+        <h1>Проба завершена</h1>
+        <p class="sub">Послушайте результат</p>
+        <button id="playAllBtn" class="btn-primary">▶ Воспроизвести всё</button>
+        <div id="resultList" class="result-list"></div>
+        <div class="result-footer">
+          <a href="./index.html" class="link-btn" id="resultLinkHome">Начать заново</a>
+          <a href="./blocks.html" class="link-btn" id="resultLinkBlocks">Выбрать другую роль</a>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <script type="module" src="./spa.js"></script>
+</body>
+</html>

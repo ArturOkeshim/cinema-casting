@@ -75,8 +75,40 @@ function applyRoleHighlight(role) {
   });
 }
 
-function renderRolePicker(roles) {
+function onConfirmRole(navigateToPrep) {
+  if (!selectedRole) return;
+  sessionStorage.setItem(SELECTED_ROLE_KEY, selectedRole);
+  if (navigateToPrep) {
+    navigateToPrep();
+  } else {
+    window.location.href = "./prep.html";
+  }
+}
+
+let confirmClickHandler = null;
+let blocksChipAbort = null;
+
+/**
+ * @param {{ onNavigateToPrep?: () => void }} [opts]
+ */
+export function mountBlocksView(opts = {}) {
+  const { onNavigateToPrep } = opts;
+  if (!container || !rolePicker || !roleChips || !confirmRoleBtn) {
+    return;
+  }
+  blocksChipAbort?.abort();
+  blocksChipAbort = new AbortController();
+  const chipSignal = blocksChipAbort.signal;
+
+  selectedRole = null;
+
+  const blocks = readBlocksFromSession();
+  renderBlocks(blocks);
+
+  const roles = getUniqueRoles(blocks);
   if (roles.length === 0) {
+    rolePicker.hidden = true;
+    confirmRoleBtn.hidden = true;
     return;
   }
 
@@ -84,32 +116,35 @@ function renderRolePicker(roles) {
     .map((r) => `<button class="chip" data-role="${escapeHtml(r)}">${escapeHtml(r)}</button>`)
     .join("");
 
-  roleChips.addEventListener("click", (e) => {
-    const btn = e.target.closest(".chip");
-    if (!btn) {
-      return;
-    }
+  roleChips.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest(".chip");
+      if (!btn) return;
 
-    const role = btn.dataset.role;
+      const role = btn.dataset.role;
 
-    if (selectedRole === role) {
-      selectedRole = null;
-      btn.classList.remove("active");
-    } else {
-      selectedRole = role;
-      roleChips.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
-      btn.classList.add("active");
-    }
+      if (selectedRole === role) {
+        selectedRole = null;
+        btn.classList.remove("active");
+      } else {
+        selectedRole = role;
+        roleChips.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+        btn.classList.add("active");
+      }
 
-    applyRoleHighlight(selectedRole);
-    confirmRoleBtn.hidden = !selectedRole;
-  });
+      applyRoleHighlight(selectedRole);
+      confirmRoleBtn.hidden = !selectedRole;
+    },
+    { signal: chipSignal }
+  );
 
-  confirmRoleBtn.addEventListener("click", () => {
-    if (!selectedRole) return;
-    sessionStorage.setItem(SELECTED_ROLE_KEY, selectedRole);
-    window.location.href = "./prep.html";
-  });
+  confirmRoleBtn.hidden = true;
+  if (confirmClickHandler) {
+    confirmRoleBtn.removeEventListener("click", confirmClickHandler);
+  }
+  confirmClickHandler = () => onConfirmRole(onNavigateToPrep);
+  confirmRoleBtn.addEventListener("click", confirmClickHandler);
 
   rolePicker.hidden = false;
 }
@@ -137,6 +172,6 @@ function renderBlocks(blocks) {
   container.innerHTML = html;
 }
 
-const blocks = readBlocksFromSession();
-renderBlocks(blocks);
-renderRolePicker(getUniqueRoles(blocks));
+if (document.getElementById("blocksContainer")?.closest("#spaRoot") === null) {
+  mountBlocksView();
+}

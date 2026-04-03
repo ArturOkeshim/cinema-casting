@@ -378,11 +378,14 @@
     <button id="playAllBtn" class="btn-primary">▶ Воспроизвести всё</button>
     <div id="resultList" class="result-list"></div>
     <div class="result-footer">
-      <a href="./index.html" class="link-btn">Начать заново</a>
-      <a href="./blocks.html" class="link-btn">Выбрать другую роль</a>
+      <a href="./index.html" class="link-btn" id="resultLinkHome">Начать заново</a>
+      <a href="./blocks.html" class="link-btn" id="resultLinkBlocks">Выбрать другую роль</a>
     </div>
   </main>
 
-  <script type="module" src="./rehearsal.js"></script>
+  <script type="module">
+    import { mountRehearsalView } from "./rehearsal.js";
+    mountRehearsalView();
+  </script>
 </body>
 </html>

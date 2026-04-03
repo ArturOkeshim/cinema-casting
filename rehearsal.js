@@ -1,6 +1,7 @@
 import { getPartnerAudio } from './audioDb.js';
 import { PersistentSpeechmaticsSession } from './recognizer.js';
 import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
+import { acquireSharedMic, releaseSharedMic } from './micSession.js';
 
 const BLOCKS_KEY = 'cinemaCasting.roleBlocks';
 const ROLE_KEY   = 'cinemaCasting.selectedRole';
@@ -454,7 +455,8 @@ function finishActorTurn(seqIdx) {
 async function showResult() {
   persistentSession?.destroy();
   persistentSession = null;
-  micStream?.getTracks().forEach(t => t.stop());
+  releaseSharedMic();
+  micStream = null;
 
   hide(rehearsalView);
   show(resultView);
@@ -500,14 +502,77 @@ async function showResult() {
     audio.onended = () => { if (idx + 1 < audios.length) audios[idx + 1].play(); };
   });
 
-  playAllBtn.addEventListener('click', () => {
+  playAllBtn.onclick = () => {
     audios.forEach(a => { a.pause(); a.currentTime = 0; });
     if (audios.length > 0) audios[0].play();
-  });
+  };
+}
+
+let resultNavAbort = null;
+
+function resetRehearsalMountState() {
+  if (currentSkipHandler) {
+    skipBtn.removeEventListener('click', currentSkipHandler);
+    currentSkipHandler = null;
+  }
+  persistentSession?.destroy();
+  persistentSession = null;
+  sequence = [];
+  currentIdx = 0;
+  smToken = '';
+  smTokenExpiresAtMs = 0;
+  sessionAdditionalVocab = [];
+  micStream = null;
+  mediaRecorder = null;
+  recordedChunks = [];
+  finalSegments = [];
+  turnDone = false;
+  actorRecordings.clear();
+  show(rehearsalView);
+  hide(resultView);
 }
 
 // ── Инициализация ──────────────────────────────────────────────────────────
-async function init() {
+/**
+ * @param {{ onNavigateHome?: () => void, onNavigateBlocks?: () => void }} [opts]
+ */
+export async function mountRehearsalView(opts = {}) {
+  const { onNavigateHome, onNavigateBlocks } = opts;
+  resetRehearsalMountState();
+
+  resultNavAbort?.abort();
+  resultNavAbort = new AbortController();
+  const { signal } = resultNavAbort;
+
+  const homeEl = document.getElementById('resultLinkHome');
+  const blocksEl = document.getElementById('resultLinkBlocks');
+  homeEl?.addEventListener(
+    'click',
+    (e) => {
+      if (onNavigateHome) {
+        e.preventDefault();
+        releaseSharedMic();
+        onNavigateHome();
+      }
+    },
+    { signal }
+  );
+  blocksEl?.addEventListener(
+    'click',
+    (e) => {
+      if (onNavigateBlocks) {
+        e.preventDefault();
+        releaseSharedMic();
+        onNavigateBlocks();
+      }
+    },
+    { signal }
+  );
+
+  await runRehearsalInit();
+}
+
+async function runRehearsalInit() {
   showLoading('Инициализация…');
 
   let blocks, role;
@@ -548,10 +613,10 @@ async function init() {
 
   actorBadgeEl.textContent = `Вы: ${role}`;
 
-  // Запрашиваем микрофон один раз на весь сеанс репетиции
+  // Один поток с подготовки (micSession) или первый запрос здесь
   showLoading('Запрашиваем доступ к микрофону…');
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = await acquireSharedMic();
   } catch {
     showLoading('Нет доступа к микрофону. Разреши доступ в браузере и обнови страницу.');
     return;
@@ -592,5 +657,3 @@ async function init() {
   renderSceneOverview();
   advanceTo(0);
 }
-
-init();

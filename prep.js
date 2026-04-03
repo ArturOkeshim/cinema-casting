@@ -1,4 +1,5 @@
 import { storePartnerAudio, clearAllAudio } from './audioDb.js';
+import { acquireSharedMic } from './micSession.js';
 
 const BLOCKS_STORAGE_KEY = "cinemaCasting.roleBlocks";
 const SELECTED_ROLE_KEY = "cinemaCasting.selectedRole";
@@ -14,24 +15,8 @@ const audioStore = new Map();
 // Active MediaRecorder instance.
 let activeRecorder = null;
 
-/** Один микрофон на всю страницу подготовки (меньше запросов разрешений в Safari iOS). */
-let prepMicStream = null;
-
-async function ensurePrepMicStream() {
-  if (prepMicStream?.getAudioTracks().some((t) => t.readyState === 'live')) {
-    return prepMicStream;
-  }
-  prepMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  return prepMicStream;
-}
-
-function releasePrepMic() {
-  if (!prepMicStream) return;
-  prepMicStream.getTracks().forEach((t) => t.stop());
-  prepMicStream = null;
-}
-
-window.addEventListener('pagehide', releasePrepMic);
+/** SPA: после сохранения в IndexedDB вызвать вместо перехода на rehearsal.html */
+let prepAfterSave = null;
 
 function readSession() {
   try {
@@ -137,7 +122,7 @@ async function startRecording(segmentId, controlsEl, total) {
 
   let stream;
   try {
-    stream = await ensurePrepMicStream();
+    stream = await acquireSharedMic();
   } catch {
     alert("Нет доступа к микрофону. Разреши доступ и попробуй снова.");
     return;
@@ -247,29 +232,77 @@ function renderSegments(segments) {
   }
 }
 
-const { blocks, role } = readSession();
 let segments = [];
+let proceedAbort = null;
 
-if (!role) {
-  segmentsContainer.innerHTML = `<div class="empty">Роль не выбрана. <a href="./blocks.html" style="color:#9fc0ff">Вернись назад</a> и выбери роль.</div>`;
-} else {
+function prepBackLinkHtml() {
+  return prepAfterSave
+    ? `<a href="#" id="prepBackToBlocks" style="color:#9fc0ff">Вернись назад</a>`
+    : `<a href="./blocks.html" style="color:#9fc0ff">Вернись назад</a>`;
+}
+
+export function resetPrepUIForMount() {
+  audioStore.clear();
+  activeRecorder = null;
+  segments = [];
+  if (proceedAbort) {
+    proceedAbort.abort();
+    proceedAbort = null;
+  }
+}
+
+/**
+ * @param {{ onAfterSave?: () => void | Promise<void>, onBackToBlocks?: () => void }} [opts]
+ *   onAfterSave — после записи партнёров (SPA → репетиция). Без него — переход на rehearsal.html.
+ */
+export function mountPrepView(opts = {}) {
+  const { onAfterSave, onBackToBlocks } = opts;
+  prepAfterSave = onAfterSave ?? null;
+  resetPrepUIForMount();
+
+  const { blocks, role } = readSession();
+  if (!role) {
+    segmentsContainer.innerHTML = `<div class="empty">Роль не выбрана. ${prepBackLinkHtml()} и выбери роль.</div>`;
+    const back = document.getElementById("prepBackToBlocks");
+    back?.addEventListener("click", (e) => {
+      e.preventDefault();
+      onBackToBlocks?.();
+    });
+    actorRoleLabel.innerHTML = "";
+    proceedBtn.disabled = true;
+    progressLabel.textContent = "";
+    return;
+  }
+
   actorRoleLabel.innerHTML = `<span class="actor-role">Ты читаешь за: ${escapeHtml(role)}</span>`;
   segments = buildSegments(blocks, role);
   renderSegments(segments);
+
+  proceedAbort = new AbortController();
+  const { signal } = proceedAbort;
+
+  proceedBtn.addEventListener(
+    "click",
+    async () => {
+      proceedBtn.disabled = true;
+      progressLabel.textContent = "Сохраняем аудио…";
+      try {
+        await clearAllAudio();
+        for (const [segmentId, { blob }] of audioStore) {
+          await storePartnerAudio(segmentId, blob);
+        }
+        if (prepAfterSave) {
+          await prepAfterSave();
+        } else {
+          window.location.href = "./rehearsal.html";
+        }
+      } catch (err) {
+        console.error(err);
+        progressLabel.textContent = "Ошибка сохранения. Попробуйте снова.";
+        updateProgress(segments.length);
+      }
+    },
+    { signal }
+  );
 }
 
-proceedBtn.addEventListener('click', async () => {
-  proceedBtn.disabled = true;
-  progressLabel.textContent = 'Сохраняем аудио…';
-  try {
-    await clearAllAudio();
-    for (const [segmentId, { blob }] of audioStore) {
-      await storePartnerAudio(segmentId, blob);
-    }
-    window.location.href = './rehearsal.html';
-  } catch (err) {
-    console.error(err);
-    progressLabel.textContent = 'Ошибка сохранения. Попробуйте снова.';
-    updateProgress(segments.length);
-  }
-});
