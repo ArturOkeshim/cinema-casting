@@ -1,5 +1,9 @@
-const BLOCKS_STORAGE_KEY = "cinemaCasting.roleBlocks";
-const SELECTED_ROLE_KEY = "cinemaCasting.selectedRole";
+import { initStageNav } from "./stageNav.js";
+import { loadBlocks, saveRole, loadRole, clearRehearsalCursor } from "./flowState.js";
+import { clearActorClips, clearPartnerClips } from "./audioDb.js";
+
+initStageNav("role");
+
 const container = document.getElementById("blocksContainer");
 const rolePicker = document.getElementById("rolePicker");
 const roleChips = document.getElementById("roleChips");
@@ -11,20 +15,10 @@ function renderEmpty(message) {
   container.innerHTML = `<div class="empty">${message}</div>`;
 }
 
-function readBlocksFromSession() {
-  const raw = sessionStorage.getItem(BLOCKS_STORAGE_KEY);
-  if (!raw) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.filter((item) => item && typeof item.role === "string" && typeof item.text === "string");
-  } catch {
-    return [];
-  }
+function readBlocksFromStorage() {
+  return loadBlocks().filter(
+    (item) => item && typeof item.role === "string" && typeof item.text === "string"
+  );
 }
 
 function escapeHtml(str) {
@@ -105,9 +99,15 @@ function renderRolePicker(roles) {
     confirmRoleBtn.hidden = !selectedRole;
   });
 
-  confirmRoleBtn.addEventListener("click", () => {
+  confirmRoleBtn.addEventListener("click", async () => {
     if (!selectedRole) return;
-    sessionStorage.setItem(SELECTED_ROLE_KEY, selectedRole);
+    const prev = loadRole();
+    if (prev && prev !== selectedRole) {
+      await clearActorClips();
+      await clearPartnerClips();
+    }
+    clearRehearsalCursor();
+    saveRole(selectedRole);
     window.location.href = "./prep.html";
   });
 
@@ -137,6 +137,20 @@ function renderBlocks(blocks) {
   container.innerHTML = html;
 }
 
-const blocks = readBlocksFromSession();
+const blocks = readBlocksFromStorage();
 renderBlocks(blocks);
+
+const savedRole = loadRole();
+if (savedRole && getUniqueRoles(blocks).includes(savedRole)) {
+  selectedRole = savedRole;
+}
+
 renderRolePicker(getUniqueRoles(blocks));
+
+if (selectedRole) {
+  roleChips.querySelectorAll(".chip").forEach((c) => {
+    if (c.dataset.role === selectedRole) c.classList.add("active");
+  });
+  applyRoleHighlight(selectedRole);
+  confirmRoleBtn.hidden = false;
+}

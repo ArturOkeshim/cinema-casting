@@ -1,9 +1,10 @@
-import { getPartnerAudio } from './audioDb.js';
+import { getPartnerAudio, getActorRecording, storeActorRecording, clearActorClips } from './audioDb.js';
 import { PersistentSpeechmaticsSession } from './recognizer.js';
 import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
+import { initStageNav } from './stageNav.js';
+import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
 
-const BLOCKS_KEY = 'cinemaCasting.roleBlocks';
-const ROLE_KEY   = 'cinemaCasting.selectedRole';
+initStageNav(location.hash === '#result' ? 'result' : 'rehearsal', { prependTo: document.body });
 
 // ── Состояние ──────────────────────────────────────────────────────────────
 let sequence   = [];   // [{ type:'partner'|'actor', segId?, lines?, line? }]
@@ -23,7 +24,7 @@ let recordedChunks = [];
 let finalSegments  = [];    // накопленные final-транскрипты текущей реплики
 let turnDone       = false; // защита от двойного вызова finishActorTurn
 
-/** Записанные реплики актёра: seqIdx → Blob */
+/** Записанные реплики актёра: seqIdx → Blob (кэш; дублируется в IndexedDB) */
 const actorRecordings = new Map();
 
 /** Ссылка на текущий skip-handler для последующего removeEventListener */
@@ -48,6 +49,8 @@ const sceneSummaryNextEl = document.getElementById('sceneSummaryNext');
 const sceneTimelineEl = document.getElementById('sceneTimeline');
 const playAllBtn     = document.getElementById('playAllBtn');
 const resultListEl   = document.getElementById('resultList');
+const rehearseAgainBtn = document.getElementById('rehearseAgainBtn');
+const rerecordPartnersBtn = document.getElementById('rerecordPartnersBtn');
 
 // ── Утилиты ────────────────────────────────────────────────────────────────
 function extractSpeakable(text) {
@@ -307,8 +310,14 @@ function buildSequence(blocks, role) {
   return seq;
 }
 
+async function blobForActorStep(seqIdx) {
+  if (actorRecordings.has(seqIdx)) return actorRecordings.get(seqIdx);
+  return getActorRecording(seqIdx);
+}
+
 // ── Навигация по шагам ─────────────────────────────────────────────────────
 async function advanceTo(idx) {
+  saveRehearsalCursor(idx);
   if (idx >= sequence.length) {
     await showResult();
     return;
@@ -438,14 +447,25 @@ function finishActorTurn(seqIdx) {
   persistentSession?.pauseSending();
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.onstop = () => {
-      actorRecordings.set(seqIdx, new Blob(recordedChunks, { type: mediaRecorder?.mimeType ?? 'audio/webm' }));
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType ?? 'audio/webm' });
+      actorRecordings.set(seqIdx, blob);
       mediaRecorder = null;
+      try {
+        await storeActorRecording(seqIdx, blob);
+      } catch (e) {
+        console.error('storeActorRecording', e);
+      }
       advanceTo(currentIdx + 1);
     };
     mediaRecorder.stop();
   } else {
     mediaRecorder = null;
+    const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType ?? 'audio/webm' });
+    if (blob.size > 0) {
+      actorRecordings.set(seqIdx, blob);
+      storeActorRecording(seqIdx, blob).catch((e) => console.error('storeActorRecording', e));
+    }
     advanceTo(currentIdx + 1);
   }
 }
@@ -455,11 +475,13 @@ async function showResult() {
   persistentSession?.destroy();
   persistentSession = null;
   micStream?.getTracks().forEach(t => t.stop());
+  micStream = null;
+
+  saveRehearsalCursor(sequence.length);
 
   hide(rehearsalView);
   show(resultView);
 
-  // Собираем список всех аудио в порядке сцены
   const items = [];
   for (let i = 0; i < sequence.length; i++) {
     const step = sequence[i];
@@ -472,7 +494,7 @@ async function showResult() {
         items.push({ blob, label, type: 'partner' });
       }
     } else {
-      const blob = actorRecordings.get(i);
+      const blob = await blobForActorStep(i);
       if (blob) {
         items.push({
           blob,
@@ -495,31 +517,66 @@ async function showResult() {
 
   const audios = [...resultListEl.querySelectorAll('audio')];
 
-  // Цепочка воспроизведения
   audios.forEach((audio, idx) => {
     audio.onended = () => { if (idx + 1 < audios.length) audios[idx + 1].play(); };
   });
 
-  playAllBtn.addEventListener('click', () => {
+  playAllBtn.onclick = () => {
     audios.forEach(a => { a.pause(); a.currentTime = 0; });
     if (audios.length > 0) audios[0].play();
-  });
+  };
+
+  rehearseAgainBtn.onclick = async () => {
+    rehearseAgainBtn.disabled = true;
+    try {
+      await clearActorClips();
+      clearRehearsalCursor();
+      window.location.href = './rehearsal.html';
+    } catch (e) {
+      console.error(e);
+      rehearseAgainBtn.disabled = false;
+    }
+  };
+
+  rerecordPartnersBtn.onclick = () => {
+    window.location.href = './prep.html';
+  };
+}
+
+async function hydrateActorRecordingsFromDb() {
+  for (let i = 0; i < sequence.length; i++) {
+    if (sequence[i].type !== 'actor') continue;
+    const blob = await getActorRecording(i);
+    if (blob && blob.size > 0) actorRecordings.set(i, blob);
+  }
 }
 
 // ── Инициализация ──────────────────────────────────────────────────────────
 async function init() {
   showLoading('Инициализация…');
+  const resultOnly = location.hash === '#result';
 
-  let blocks, role;
-  try {
-    blocks = JSON.parse(sessionStorage.getItem(BLOCKS_KEY) || '[]');
-    role   = sessionStorage.getItem(ROLE_KEY) || '';
-  } catch {
-    blocks = []; role = '';
-  }
+  const blocks = loadBlocks();
+  const role = loadRole();
 
   if (!role || !blocks.length) {
     showLoading('Данные не найдены. <a href="./index.html" style="color:#9fc0ff">Начни заново</a>');
+    return;
+  }
+
+  sequence = buildSequence(blocks, role);
+  if (!sequence.length) {
+    showLoading('В сцене нет реплик.');
+    return;
+  }
+
+  await hydrateActorRecordingsFromDb();
+  actorBadgeEl.textContent = `Вы: ${role}`;
+  updateStepCounter();
+
+  if (resultOnly) {
+    hide(loadingSection);
+    await showResult();
     return;
   }
 
@@ -532,12 +589,6 @@ async function init() {
     return;
   }
 
-  sequence = buildSequence(blocks, role);
-  if (!sequence.length) {
-    showLoading('В сцене нет реплик.');
-    return;
-  }
-
   showLoading('Собираем словарь сложных слов для распознавания…');
   try {
     sessionAdditionalVocab = await generateSessionVocab(collectActorSpeakableLines(blocks, role));
@@ -545,8 +596,6 @@ async function init() {
     console.warn('Failed to generate session additional_vocab:', e);
     sessionAdditionalVocab = [];
   }
-
-  actorBadgeEl.textContent = `Вы: ${role}`;
 
   // Запрашиваем микрофон один раз на весь сеанс репетиции
   showLoading('Запрашиваем доступ к микрофону…');
@@ -588,9 +637,15 @@ async function init() {
   persistentSession.pauseSending();
 
   hide(loadingSection);
-  updateStepCounter();
+
+  let startIdx = loadRehearsalCursor();
+  if (startIdx >= sequence.length) {
+    startIdx = 0;
+    saveRehearsalCursor(0);
+  }
+
   renderSceneOverview();
-  advanceTo(0);
+  advanceTo(startIdx);
 }
 
 init();

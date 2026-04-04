@@ -1,7 +1,24 @@
+import { initStageNav } from "./stageNav.js";
+import { saveBlocks, saveScriptText, loadScriptText, clearRehearsalCursor, saveRole } from "./flowState.js";
+import { clearAllSessionAudio } from "./audioDb.js";
+
 const scriptInput = document.getElementById("scriptInput");
 const processBtn = document.getElementById("processBtn");
 const status = document.getElementById("status");
-const BLOCKS_STORAGE_KEY = "cinemaCasting.roleBlocks";
+
+initStageNav("script");
+
+const savedScript = loadScriptText();
+if (savedScript) {
+  scriptInput.value = savedScript;
+}
+
+let scriptPersistTimer = null;
+scriptInput.addEventListener("input", () => {
+  if (scriptPersistTimer) clearTimeout(scriptPersistTimer);
+  scriptPersistTimer = setTimeout(() => saveScriptText(scriptInput.value), 400);
+});
+window.addEventListener("beforeunload", () => saveScriptText(scriptInput.value));
 
 function setStatus(text) {
   status.textContent = text;
@@ -216,8 +233,10 @@ async function requestRoleSplit({ sceneText }) {
 
 async function processScriptText(sceneText) {
   const blocks = await requestRoleSplit({ sceneText });
-
-  sessionStorage.setItem(BLOCKS_STORAGE_KEY, JSON.stringify(blocks));
+  await clearAllSessionAudio();
+  clearRehearsalCursor();
+  saveRole("");
+  saveBlocks(blocks);
   console.log("Role blocks:", blocks);
   return blocks;
 }
@@ -234,6 +253,7 @@ processBtn.addEventListener("click", async () => {
   setStatus("Обрабатываем текст...");
 
   try {
+    saveScriptText(text);
     const blocks = await processScriptText(text);
     setStatus(`Готово: найдено блоков — ${blocks.length}.`);
     window.location.href = "./blocks.html";

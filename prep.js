@@ -1,7 +1,8 @@
-import { storePartnerAudio, clearAllAudio } from './audioDb.js';
+import { initStageNav } from './stageNav.js';
+import { loadBlocks, loadRole } from './flowState.js';
+import { storePartnerAudio, clearPartnerClips, getPartnerAudio } from './audioDb.js';
 
-const BLOCKS_STORAGE_KEY = "cinemaCasting.roleBlocks";
-const SELECTED_ROLE_KEY = "cinemaCasting.selectedRole";
+initStageNav('record');
 
 const segmentsContainer = document.getElementById("segmentsContainer");
 const actorRoleLabel = document.getElementById("actorRoleLabel");
@@ -34,13 +35,9 @@ function releasePrepMic() {
 window.addEventListener('pagehide', releasePrepMic);
 
 function readSession() {
-  try {
-    const blocks = JSON.parse(sessionStorage.getItem(BLOCKS_STORAGE_KEY) || "[]");
-    const role = sessionStorage.getItem(SELECTED_ROLE_KEY) || "";
-    return { blocks: Array.isArray(blocks) ? blocks : [], role };
-  } catch {
-    return { blocks: [], role: "" };
-  }
+  const blocks = loadBlocks();
+  const role = loadRole();
+  return { blocks: Array.isArray(blocks) ? blocks : [], role };
 }
 
 function extractSpeakableText(text) {
@@ -247,6 +244,19 @@ function renderSegments(segments) {
   }
 }
 
+async function hydratePartnerAudioFromDb(segments) {
+  if (segments.length === 0) return;
+  for (const seg of segments) {
+    const blob = await getPartnerAudio(seg.id);
+    if (!blob || blob.size === 0) continue;
+    const controlsEl = document.getElementById(`controls-${seg.id}`);
+    if (!controlsEl) continue;
+    const url = storeAudio(seg.id, blob, 'recorded', segments.length);
+    renderAudioPlayer(seg.id, url, 'recorded', controlsEl, segments.length);
+  }
+  updateProgress(segments.length);
+}
+
 const { blocks, role } = readSession();
 let segments = [];
 
@@ -256,13 +266,14 @@ if (!role) {
   actorRoleLabel.innerHTML = `<span class="actor-role">Ты читаешь за: ${escapeHtml(role)}</span>`;
   segments = buildSegments(blocks, role);
   renderSegments(segments);
+  hydratePartnerAudioFromDb(segments).catch((e) => console.error(e));
 }
 
 proceedBtn.addEventListener('click', async () => {
   proceedBtn.disabled = true;
   progressLabel.textContent = 'Сохраняем аудио…';
   try {
-    await clearAllAudio();
+    await clearPartnerClips();
     for (const [segmentId, { blob }] of audioStore) {
       await storePartnerAudio(segmentId, blob);
     }
