@@ -6,6 +6,62 @@ import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRe
 
 initStageNav(location.hash === '#result' ? 'result' : 'rehearsal', { prependTo: document.body });
 
+const REHEARSAL_RESTART_PARAM = 'restart';
+const REHEARSAL_AGAIN_PARAM = 'again';
+
+/**
+ * ?restart=1 — только курсор с 0 (меню, prep).
+ * ?again=1 — новая репетиция с итога: очистить записи актёра в IndexedDB + курсор 0 (очистка в init, не в обработчике кнопки).
+ */
+async function applyRehearsalUrlFlags() {
+  const params = new URLSearchParams(location.search);
+  const hasRestart = params.get(REHEARSAL_RESTART_PARAM) === '1';
+  const hasAgain = params.get(REHEARSAL_AGAIN_PARAM) === '1';
+
+  if (!hasRestart && !hasAgain) return;
+
+  const stripQuery = () => {
+    try {
+      window.history.replaceState({}, '', `${location.pathname}${location.hash || ''}`);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (location.hash === '#result') {
+    stripQuery();
+    return;
+  }
+
+  if (hasAgain) {
+    try {
+      await clearActorClips();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  clearRehearsalCursor();
+  saveRehearsalCursor(0);
+  stripQuery();
+}
+
+function bindResultFooterNavigation() {
+  document.getElementById('resultView')?.addEventListener('click', (e) => {
+    if (e.target.closest('#rehearseAgainBtn')) {
+      e.preventDefault();
+      window.location.assign(`./rehearsal.html?${REHEARSAL_AGAIN_PARAM}=1`);
+      return;
+    }
+    if (e.target.closest('#rerecordPartnersBtn')) {
+      e.preventDefault();
+      window.location.href = './prep.html';
+    }
+  });
+}
+
+bindResultFooterNavigation();
+
 // ── Состояние ──────────────────────────────────────────────────────────────
 let sequence   = [];   // [{ type:'partner'|'actor', segId?, lines?, line? }]
 let currentIdx = 0;
@@ -525,22 +581,6 @@ async function showResult() {
     audios.forEach(a => { a.pause(); a.currentTime = 0; });
     if (audios.length > 0) audios[0].play();
   };
-
-  rehearseAgainBtn.onclick = async () => {
-    rehearseAgainBtn.disabled = true;
-    try {
-      await clearActorClips();
-      clearRehearsalCursor();
-      window.location.href = './rehearsal.html';
-    } catch (e) {
-      console.error(e);
-      rehearseAgainBtn.disabled = false;
-    }
-  };
-
-  rerecordPartnersBtn.onclick = () => {
-    window.location.href = './prep.html';
-  };
 }
 
 async function hydrateActorRecordingsFromDb() {
@@ -554,6 +594,8 @@ async function hydrateActorRecordingsFromDb() {
 // ── Инициализация ──────────────────────────────────────────────────────────
 async function init() {
   showLoading('Инициализация…');
+  await applyRehearsalUrlFlags();
+
   const resultOnly = location.hash === '#result';
 
   const blocks = loadBlocks();

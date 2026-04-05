@@ -14,6 +14,11 @@
       color: #e7ecff;
     }
 
+    main[hidden] {
+      display: none !important;
+      pointer-events: none;
+    }
+
     .layout {
       width: min(800px, 92vw);
       margin: 0 auto;
@@ -305,12 +310,18 @@
 
     audio { height: 36px; border-radius: 6px; }
 
+    #resultView.layout {
+      position: relative;
+      z-index: 2;
+    }
     .result-footer {
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
       align-items: center;
       margin-top: 8px;
+      position: relative;
+      z-index: 2;
     }
     .result-footer .btn-primary { margin-bottom: 0; }
     .result-footer .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -395,7 +406,7 @@
     <button id="playAllBtn" class="btn-primary">▶ Воспроизвести всё</button>
     <div id="resultList" class="result-list"></div>
     <div class="result-footer">
-      <button id="rehearseAgainBtn" type="button" class="btn-primary">Репетировать ещё раз</button>
+      <button id="rehearseAgainBtn" type="button" class="btn-primary">Начать репетицию заново</button>
       <button id="rerecordPartnersBtn" type="button" class="btn-secondary-outline">Перезаписать реплики напарников</button>
     </div>
   </main>

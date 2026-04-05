@@ -12,7 +12,7 @@ export function initStageNav(current, opts = {}) {
     { id: 'script', label: 'Сценарий', href: './index.html' },
     { id: 'role', label: 'Выбор роли', href: './blocks.html' },
     { id: 'record', label: 'Запись реплик', href: './prep.html' },
-    { id: 'rehearsal', label: 'Репетиция', href: './rehearsal.html' },
+    { id: 'rehearsal', label: 'Репетиция', href: './rehearsal.html?restart=1' },
     { id: 'result', label: 'Итог', href: './rehearsal.html#result' },
   ];
 
