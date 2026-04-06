@@ -3,6 +3,7 @@ import os
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib import error, request
+from urllib.parse import unquote
 
 from dotenv import load_dotenv
 
@@ -11,6 +12,44 @@ load_dotenv()
 # Production: keep BIND_HOST=127.0.0.1 and put nginx in front.
 HOST = os.getenv("BIND_HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
+
+# Статика раздаётся из корня проекта — явно не отдаём секреты и служебные каталоги.
+_FORBIDDEN_PATH_SEGMENTS = frozenset({
+    ".env",
+    ".git",
+    ".svn",
+    ".hg",
+    ".ssh",
+    "venv",
+    ".venv",
+    "__pycache__",
+})
+_FORBIDDEN_FILE_NAMES = frozenset({
+    "id_rsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "credentials.json",
+    "secrets.json",
+})
+_FORBIDDEN_SUFFIXES = (".pem",)
+
+
+def _is_forbidden_static_path(raw_path: str) -> bool:
+    path_only = unquote(raw_path.split("?", 1)[0])
+    if ".." in path_only:
+        return True
+    segments = [s for s in path_only.split("/") if s]
+    for seg in segments:
+        low = seg.lower()
+        if seg in _FORBIDDEN_PATH_SEGMENTS or low in _FORBIDDEN_PATH_SEGMENTS:
+            return True
+        if seg.startswith(".env") or low.startswith(".env"):
+            return True
+        if low in _FORBIDDEN_FILE_NAMES:
+            return True
+        if any(low.endswith(sfx) for sfx in _FORBIDDEN_SUFFIXES):
+            return True
+    return False
 
 
 class AppHandler(SimpleHTTPRequestHandler):
@@ -40,7 +79,16 @@ class AppHandler(SimpleHTTPRequestHandler):
                 },
             )
             return
+        if _is_forbidden_static_path(self.path):
+            self.send_error(403, "Forbidden")
+            return
         super().do_GET()
+
+    def do_HEAD(self):
+        if _is_forbidden_static_path(self.path):
+            self.send_error(403, "Forbidden")
+            return
+        super().do_HEAD()
 
     def _send_json(self, code: int, payload: dict):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
