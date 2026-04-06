@@ -3,64 +3,9 @@ import { PersistentSpeechmaticsSession } from './recognizer.js';
 import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
 import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
+import { extractSpeakable, escapeHtml, buildSequence } from './rehearsalSequence.js';
 
-initStageNav(location.hash === '#result' ? 'result' : 'rehearsal', { prependTo: document.body });
-
-const REHEARSAL_RESTART_PARAM = 'restart';
-const REHEARSAL_AGAIN_PARAM = 'again';
-
-/**
- * ?restart=1 — только курсор с 0 (меню, prep).
- * ?again=1 — новая репетиция с итога: очистить записи актёра в IndexedDB + курсор 0 (очистка в init, не в обработчике кнопки).
- */
-async function applyRehearsalUrlFlags() {
-  const params = new URLSearchParams(location.search);
-  const hasRestart = params.get(REHEARSAL_RESTART_PARAM) === '1';
-  const hasAgain = params.get(REHEARSAL_AGAIN_PARAM) === '1';
-
-  if (!hasRestart && !hasAgain) return;
-
-  const stripQuery = () => {
-    try {
-      window.history.replaceState({}, '', `${location.pathname}${location.hash || ''}`);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  if (location.hash === '#result') {
-    stripQuery();
-    return;
-  }
-
-  if (hasAgain) {
-    try {
-      await clearActorClips();
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  clearRehearsalCursor();
-  saveRehearsalCursor(0);
-  stripQuery();
-}
-
-function bindResultFooterNavigation() {
-  document.getElementById('resultView')?.addEventListener('click', (e) => {
-    if (e.target.closest('#rehearseAgainBtn')) {
-      e.preventDefault();
-      window.location.assign(`./rehearsal.html?${REHEARSAL_AGAIN_PARAM}=1`);
-      return;
-    }
-    if (e.target.closest('#rerecordPartnersBtn')) {
-      e.preventDefault();
-      window.location.href = './prep.html';
-    }
-  });
-}
-
-bindResultFooterNavigation();
+initStageNav('rehearsal', { prependTo: document.body });
 
 // ── Состояние ──────────────────────────────────────────────────────────────
 let sequence   = [];   // [{ type:'partner'|'actor', segId?, lines?, line? }]
@@ -88,7 +33,6 @@ let currentSkipHandler = null;
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const rehearsalView  = document.getElementById('rehearsalView');
-const resultView     = document.getElementById('resultView');
 const actorBadgeEl   = document.getElementById('actorBadge');
 const stepCounterEl  = document.getElementById('stepCounter');
 const loadingSection = document.getElementById('loadingSection');
@@ -103,26 +47,16 @@ const skipBtn        = document.getElementById('skipBtn');
 const sceneSummaryMainEl = document.getElementById('sceneSummaryMain');
 const sceneSummaryNextEl = document.getElementById('sceneSummaryNext');
 const sceneTimelineEl = document.getElementById('sceneTimeline');
-const playAllBtn     = document.getElementById('playAllBtn');
-const resultListEl   = document.getElementById('resultList');
-const rehearseAgainBtn = document.getElementById('rehearseAgainBtn');
-const rerecordPartnersBtn = document.getElementById('rerecordPartnersBtn');
+const startGate = document.getElementById('startGate');
+const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
+const startRehearsalBtn = document.getElementById('startRehearsalBtn');
+const startGateErrorEl = document.getElementById('startGateError');
+
+/** Сохраняются в bootstrap, нужны в startRecordingSession (словарь). */
+let rehearsalBlocks = [];
+let rehearsalRole = '';
 
 // ── Утилиты ────────────────────────────────────────────────────────────────
-function extractSpeakable(text) {
-  return text
-    .replace(/\[\[.*?\]\]/g, '')
-    .replace(/\[(?!\[).*?\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 function renderAnnotations(text) {
   return escapeHtml(text)
     .replace(/\[\[(.*?)\]\]/g, '<span class="annotation-inline">[$1]</span>');
@@ -339,33 +273,6 @@ async function generateSessionVocab(actorLines) {
   return sanitizeGeneratedVocab(parsed);
 }
 
-// ── Построение последовательности ─────────────────────────────────────────
-function buildSequence(blocks, role) {
-  const seq = [];
-  let partnerLines = [];
-  let partnerSegId = 0;
-
-  for (const block of blocks) {
-    if (block.role === 'annotation') continue;
-
-    if (block.role === role) {
-      if (partnerLines.length > 0) {
-        seq.push({ type: 'partner', segId: partnerSegId++, lines: [...partnerLines] });
-        partnerLines = [];
-      }
-      seq.push({ type: 'actor', line: block });
-    } else {
-      partnerLines.push(block);
-    }
-  }
-
-  if (partnerLines.length > 0) {
-    seq.push({ type: 'partner', segId: partnerSegId, lines: [...partnerLines] });
-  }
-
-  return seq;
-}
-
 async function blobForActorStep(seqIdx) {
   if (actorRecordings.has(seqIdx)) return actorRecordings.get(seqIdx);
   return getActorRecording(seqIdx);
@@ -375,7 +282,7 @@ async function blobForActorStep(seqIdx) {
 async function advanceTo(idx) {
   saveRehearsalCursor(idx);
   if (idx >= sequence.length) {
-    await showResult();
+    finishRehearsalAndGoToResult();
     return;
   }
   currentIdx = idx;
@@ -526,61 +433,15 @@ function finishActorTurn(seqIdx) {
   }
 }
 
-// ── Результат ──────────────────────────────────────────────────────────────
-async function showResult() {
+/** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
+function finishRehearsalAndGoToResult() {
   persistentSession?.destroy();
   persistentSession = null;
-  micStream?.getTracks().forEach(t => t.stop());
+  micStream?.getTracks().forEach((t) => t.stop());
   micStream = null;
 
   saveRehearsalCursor(sequence.length);
-
-  hide(rehearsalView);
-  show(resultView);
-
-  const items = [];
-  for (let i = 0; i < sequence.length; i++) {
-    const step = sequence[i];
-    if (step.type === 'partner') {
-      const blob = await getPartnerAudio(step.segId);
-      if (blob) {
-        const label = step.lines
-          .map(l => `${l.role}: ${extractSpeakable(l.text).slice(0, 40)}`)
-          .join(' / ');
-        items.push({ blob, label, type: 'partner' });
-      }
-    } else {
-      const blob = await blobForActorStep(i);
-      if (blob) {
-        items.push({
-          blob,
-          label: `${step.line.role}: ${extractSpeakable(step.line.text).slice(0, 50)}`,
-          type: 'actor',
-        });
-      }
-    }
-  }
-
-  const urls = items.map(item => URL.createObjectURL(item.blob));
-
-  resultListEl.innerHTML = items
-    .map((item, idx) => `
-      <div class="result-item result-item--${item.type}">
-        <span class="result-label">${escapeHtml(item.label)}</span>
-        <audio controls src="${urls[idx]}"></audio>
-      </div>`)
-    .join('');
-
-  const audios = [...resultListEl.querySelectorAll('audio')];
-
-  audios.forEach((audio, idx) => {
-    audio.onended = () => { if (idx + 1 < audios.length) audios[idx + 1].play(); };
-  });
-
-  playAllBtn.onclick = () => {
-    audios.forEach(a => { a.pause(); a.currentTime = 0; });
-    if (audios.length > 0) audios[0].play();
-  };
+  window.location.href = './result.html';
 }
 
 async function hydrateActorRecordingsFromDb() {
@@ -592,37 +453,23 @@ async function hydrateActorRecordingsFromDb() {
 }
 
 // ── Инициализация ──────────────────────────────────────────────────────────
-async function init() {
+function showStartGateError(html) {
+  if (startGateErrorEl) {
+    startGateErrorEl.hidden = false;
+    startGateErrorEl.innerHTML = html;
+  }
+  if (startRehearsalBtn) startRehearsalBtn.hidden = true;
+}
+
+/** Токен, микрофон, Speechmatics, первый шаг — после кнопки «Начать запись пробы». */
+async function startRecordingSession() {
+  const blocks = rehearsalBlocks;
+  const role = rehearsalRole;
+
+  hide(startGate);
+  show(rehearsalActiveUi);
   showLoading('Инициализация…');
-  await applyRehearsalUrlFlags();
 
-  const resultOnly = location.hash === '#result';
-
-  const blocks = loadBlocks();
-  const role = loadRole();
-
-  if (!role || !blocks.length) {
-    showLoading('Данные не найдены. <a href="./index.html" style="color:#9fc0ff">Начни заново</a>');
-    return;
-  }
-
-  sequence = buildSequence(blocks, role);
-  if (!sequence.length) {
-    showLoading('В сцене нет реплик.');
-    return;
-  }
-
-  await hydrateActorRecordingsFromDb();
-  actorBadgeEl.textContent = `Вы: ${role}`;
-  updateStepCounter();
-
-  if (resultOnly) {
-    hide(loadingSection);
-    await showResult();
-    return;
-  }
-
-  // Получаем временный Speechmatics token с сервера
   try {
     const ok = await ensureSmToken();
     if (!ok) throw new Error('empty token');
@@ -639,7 +486,6 @@ async function init() {
     sessionAdditionalVocab = [];
   }
 
-  // Запрашиваем микрофон один раз на весь сеанс репетиции
   showLoading('Запрашиваем доступ к микрофону…');
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -690,4 +536,44 @@ async function init() {
   advanceTo(startIdx);
 }
 
-init();
+async function bootstrap() {
+  try {
+    await clearActorClips();
+  } catch (e) {
+    console.error(e);
+  }
+  clearRehearsalCursor();
+  saveRehearsalCursor(0);
+
+  const blocks = loadBlocks();
+  const role = loadRole();
+
+  if (!role || !blocks.length) {
+    showStartGateError('Данные не найдены. <a href="./index.html" style="color:#9fc0ff">Начни заново</a>');
+    return;
+  }
+
+  sequence = buildSequence(blocks, role);
+  if (!sequence.length) {
+    showStartGateError('В сцене нет реплик.');
+    return;
+  }
+
+  rehearsalBlocks = blocks;
+  rehearsalRole = role;
+
+  await hydrateActorRecordingsFromDb();
+  actorBadgeEl.textContent = `Вы: ${role}`;
+  updateStepCounter();
+
+  startRehearsalBtn?.addEventListener(
+    'click',
+    () => {
+      startRehearsalBtn.disabled = true;
+      startRecordingSession();
+    },
+    { once: true }
+  );
+}
+
+bootstrap();

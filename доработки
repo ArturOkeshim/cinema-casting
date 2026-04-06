@@ -3,7 +3,7 @@ export function loadRehearsalCursor()  - не нужно сохранять ша
 export function saveRehearsalCursor(idx)  - то же самое, лишнее
 
 { id: 'rehearsal', label: 'Репетиция', href: './rehearsal.html?restart=1' },
-    { id: 'result', label: 'Итог', href: './rehearsal.html#result' },
+    { id: 'result', label: 'Итог', href: './result.html' },
   ];
 
 один файл js на две страницы - надо выяснить, в чем задумка, возможно исправить

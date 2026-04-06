@@ -277,7 +277,7 @@ proceedBtn.addEventListener('click', async () => {
     for (const [segmentId, { blob }] of audioStore) {
       await storePartnerAudio(segmentId, blob);
     }
-    window.location.href = './rehearsal.html?restart=1';
+    window.location.href = './rehearsal.html';
   } catch (err) {
     console.error(err);
     progressLabel.textContent = 'Ошибка сохранения. Попробуйте снова.';
