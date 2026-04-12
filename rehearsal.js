@@ -20,6 +20,16 @@ let persistentSession = null;
 
 /** За сколько до истечения JWT переподключаться (мс) */
 const TOKEN_REFRESH_BUFFER_MS = 120_000;
+
+/** Пауза между цифрами отсчёта перед стартом репетиции (мс) */
+const COUNTDOWN_STEP_MS = 1000;
+
+/** Неотслеживаемый «забыл вкладку» + экономия Speechmatics: лимит одной сессии с момента старта репетиции. */
+const MAX_REHEARSAL_SESSION_MS = 30 * 60 * 1000;
+const SS_RESUME_AFTER_MAX = 'rehearsalResumeAfterMaxDuration';
+const SS_TIMEOUT_BANNER = 'rehearsalTimeoutBanner';
+
+let maxDurationCheckTimer = null;
 let mediaRecorder  = null;
 let recordedChunks = [];
 let finalSegments  = [];    // накопленные final-транскрипты текущей реплики
@@ -47,6 +57,7 @@ const skipBtn        = document.getElementById('skipBtn');
 const sceneSummaryMainEl = document.getElementById('sceneSummaryMain');
 const sceneSummaryNextEl = document.getElementById('sceneSummaryNext');
 const sceneTimelineEl = document.getElementById('sceneTimeline');
+const sceneOverviewSection = document.getElementById('sceneOverviewSection');
 const startGate = document.getElementById('startGate');
 const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
 const startRehearsalBtn = document.getElementById('startRehearsalBtn');
@@ -161,11 +172,95 @@ function renderSceneOverview() {
 function show(el) { el.hidden = false; }
 function hide(el) { el.hidden = true;  }
 
+function clearMaxDurationWatch() {
+  if (maxDurationCheckTimer != null) {
+    clearInterval(maxDurationCheckTimer);
+    maxDurationCheckTimer = null;
+  }
+}
+
+function startMaxDurationWatch() {
+  clearMaxDurationWatch();
+  const deadline = Date.now() + MAX_REHEARSAL_SESSION_MS;
+  maxDurationCheckTimer = setInterval(() => {
+    if (Date.now() >= deadline) {
+      haltRehearsalDueToMaxDuration();
+    }
+  }, 15000);
+}
+
+function haltRehearsalDueToMaxDuration() {
+  clearMaxDurationWatch();
+  try {
+    if (currentSkipHandler) {
+      skipBtn.removeEventListener('click', currentSkipHandler);
+      currentSkipHandler = null;
+    }
+  } catch {
+    /* ignore */
+  }
+  saveRehearsalCursor(currentIdx);
+  sessionStorage.setItem(SS_RESUME_AFTER_MAX, '1');
+  sessionStorage.setItem(
+    SS_TIMEOUT_BANNER,
+    'Достигнут лимит 30 минут непрерывной сессии распознавания речи. Подключение отключено. Нажмите «Начать запись пробы» ещё раз, чтобы продолжить с сохранённого шага.'
+  );
+  try {
+    persistentSession?.destroy();
+  } catch {
+    /* ignore */
+  }
+  persistentSession = null;
+  try {
+    micStream?.getTracks().forEach((t) => t.stop());
+  } catch {
+    /* ignore */
+  }
+  micStream = null;
+  window.location.reload();
+}
+
+function onRehearsalVisibilityChange() {
+  if (!persistentSession) return;
+  if (document.hidden) {
+    persistentSession.pauseSending();
+    return;
+  }
+  const shouldResume =
+    !actorSection.hidden &&
+    mediaRecorder &&
+    mediaRecorder.state === 'recording' &&
+    !turnDone;
+  if (shouldResume) {
+    persistentSession.resumeSending();
+  }
+}
+
 function showLoading(msg) {
   hide(partnerSection);
   hide(actorSection);
+  loadingSection.classList.remove('loading-section--countdown');
+  loadingText.classList.remove('countdown');
   show(loadingSection);
   loadingText.innerHTML = msg;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** После готовности микрофона и Speechmatics — 3, 2, 1, затем сцена. */
+async function showStartCountdown() {
+  show(loadingSection);
+  loadingSection.classList.add('loading-section--countdown');
+  loadingText.classList.add('countdown');
+  for (const n of [3, 2, 1]) {
+    loadingText.textContent = String(n);
+    await delay(COUNTDOWN_STEP_MS);
+  }
+  loadingText.classList.remove('countdown');
+  loadingSection.classList.remove('loading-section--countdown');
+  loadingText.textContent = '';
 }
 
 function updateStepCounter() {
@@ -435,6 +530,7 @@ function finishActorTurn(seqIdx) {
 
 /** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
 function finishRehearsalAndGoToResult() {
+  clearMaxDurationWatch();
   persistentSession?.destroy();
   persistentSession = null;
   micStream?.getTracks().forEach((t) => t.stop());
@@ -524,7 +620,10 @@ async function startRecordingSession() {
   }
   persistentSession.pauseSending();
 
+  await showStartCountdown();
+
   hide(loadingSection);
+  show(sceneOverviewSection);
 
   let startIdx = loadRehearsalCursor();
   if (startIdx >= sequence.length) {
@@ -533,6 +632,7 @@ async function startRecordingSession() {
   }
 
   renderSceneOverview();
+  startMaxDurationWatch();
   advanceTo(startIdx);
 }
 
@@ -542,8 +642,16 @@ async function bootstrap() {
   } catch (e) {
     console.error(e);
   }
-  clearRehearsalCursor();
-  saveRehearsalCursor(0);
+
+  const resumeAfterMax = sessionStorage.getItem(SS_RESUME_AFTER_MAX);
+  const timeoutBanner = sessionStorage.getItem(SS_TIMEOUT_BANNER);
+  if (timeoutBanner) sessionStorage.removeItem(SS_TIMEOUT_BANNER);
+  if (resumeAfterMax) sessionStorage.removeItem(SS_RESUME_AFTER_MAX);
+
+  if (!resumeAfterMax) {
+    clearRehearsalCursor();
+    saveRehearsalCursor(0);
+  }
 
   const blocks = loadBlocks();
   const role = loadRole();
@@ -566,6 +674,13 @@ async function bootstrap() {
   actorBadgeEl.textContent = `Вы: ${role}`;
   updateStepCounter();
 
+  if (timeoutBanner && startGateErrorEl) {
+    startGateErrorEl.hidden = false;
+    startGateErrorEl.textContent = timeoutBanner;
+  }
+
+  document.addEventListener('visibilitychange', onRehearsalVisibilityChange);
+
   startRehearsalBtn?.addEventListener(
     'click',
     () => {
@@ -577,3 +692,4 @@ async function bootstrap() {
 }
 
 bootstrap();
+

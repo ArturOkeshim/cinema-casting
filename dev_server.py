@@ -53,6 +53,12 @@ def _is_forbidden_static_path(raw_path: str) -> bool:
 
 
 class AppHandler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Разработка: всегда отдавать свежие HTML/JS/CSS с сервера, без кэша в браузере.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def do_GET(self):
         if self.path == "/api/config":
             self._send_json(200, {

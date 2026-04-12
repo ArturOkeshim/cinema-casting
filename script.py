@@ -19,12 +19,16 @@ load_dotenv()
 
 CHUNK_SIZE = 4096
 # Базовые пороги; для длинных фраз см. adaptive_thresholds()
-MIN_LEN_RATIO = 0.75
-FINAL_SCORE_THRESHOLD = 0.82
-TAIL_WINDOW = 6
-TAIL_WORDS = 3
-# Более мягкое условие: допускаем частичный пропуск служебных слов в хвосте.
-MIN_TAIL_SCORE = 0.6
+MIN_LEN_RATIO = 0.58
+FINAL_SCORE_THRESHOLD = 0.68
+TAIL_WINDOW = 10
+TAIL_WORDS = 4
+# Концовку держим строже; начало/середина — через низкий вес в calc_score.
+MIN_TAIL_SCORE = 0.78
+
+WEIGHT_COVERAGE = 0.1
+WEIGHT_FUZZY = 0.1
+WEIGHT_TAIL = 0.8
 
 
 def normalize_text(text: str) -> str:
@@ -34,13 +38,13 @@ def normalize_text(text: str) -> str:
 
 
 def adaptive_thresholds(reference: str) -> tuple[float, float]:
-    """Чем длиннее эталон, тем больше ошибок ASR — чуть мягче пороги."""
+    """Композитный score в основном из хвоста — пороги ниже, длину допускаем свободнее."""
     n = len(normalize_text(reference).split())
     if n <= 15:
         return MIN_LEN_RATIO, FINAL_SCORE_THRESHOLD
     if n <= 50:
-        return 0.72, 0.77
-    return 0.66, 0.72
+        return 0.52, 0.63
+    return 0.48, 0.58
 
 
 def lcs_length(a_words: list[str], b_words: list[str]) -> int:
@@ -78,7 +82,7 @@ def calc_score(reference: str, hypothesis: str) -> tuple[float, float, float, fl
     coverage = lcs_length(ref_words, hyp_words) / len(ref_words)
     fuzzy = SequenceMatcher(None, ref_norm, hyp_norm).ratio()
     tail = tail_score(ref_words, hyp_words, tail_words_count=min(TAIL_WORDS, len(ref_words)), tail_window=TAIL_WINDOW)
-    score = 0.30 * coverage + 0.35 * fuzzy + 0.35 * tail
+    score = WEIGHT_COVERAGE * coverage + WEIGHT_FUZZY * fuzzy + WEIGHT_TAIL * tail
     return score, coverage, fuzzy, len_ratio, tail
 
 

@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cinema Casting – Репетиция</title>
   <style>
-    :root { font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; }
+    :root {
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      /* Отступ сверху для sticky-блока реплики: под липкую панель этапов (~одна строка). Если навигация переносится на две строки — увеличь. */
+      --rehearsal-actor-sticky-top: 58px;
+    }
 
     body {
       margin: 0;
@@ -19,10 +23,30 @@
       pointer-events: none;
     }
 
+    /* Пока не нажата «Начать запись», весь блок активной репетиции скрыт (надёжнее атрибута hidden в части браузеров). */
+    #rehearsalActiveUi[hidden] {
+      display: none !important;
+    }
+
     .layout {
-      width: min(800px, 92vw);
+      width: min(1200px, 96vw);
       margin: 0 auto;
       padding: 24px 0 60px;
+    }
+
+    /* Колонка: шапка → суфлёр → обзор; обзор крутится отдельно, чтобы реплика не уезжала вниз экрана */
+    #rehearsalActiveUi {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #rehearsalActiveUi .scene-overview {
+      min-height: 0;
+      overflow-y: auto;
+      max-height: min(52vh, calc(100vh - 15rem));
+      padding-right: 6px;
+      -webkit-overflow-scrolling: touch;
     }
 
     /* ── header ── */
@@ -262,11 +286,39 @@
 
     .btn-skip:hover { background: #44548f; }
 
+    /* Текущая реплика остаётся под панелью этапов при прокрутке длинного таймлайна */
+    #rehearsalActiveUi #actorSection:not([hidden]) {
+      position: sticky;
+      top: max(var(--rehearsal-actor-sticky-top), env(safe-area-inset-top, 0px));
+      z-index: 50;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      background: #0b1020;
+      box-shadow: 0 14px 24px -10px rgba(0, 0, 0, 0.55);
+    }
+
     /* ── loading / error ── */
     .loading-text {
       color: #b9c5f5;
       font-size: 15px;
       padding: 40px 0;
+    }
+
+    #loadingSection.loading-section--countdown {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: min(48vh, 420px);
+    }
+
+    .loading-text.countdown {
+      font-size: clamp(72px, 20vw, 128px);
+      font-weight: 800;
+      padding: 24px 0;
+      letter-spacing: 0.06em;
+      color: #e7ecff;
+      line-height: 1;
+      text-align: center;
     }
 
     .btn-primary {
@@ -328,20 +380,6 @@
         <span id="actorBadge" class="actor-badge"></span>
         <span id="stepCounter" class="step-counter"></span>
       </div>
-      <section class="scene-overview">
-        <div class="scene-summary">
-          <div id="sceneSummaryMain" class="scene-summary-main">Загрузка сцены…</div>
-          <div id="sceneSummaryNext" class="scene-summary-next"></div>
-        </div>
-        <div id="sceneTimeline" class="scene-timeline"></div>
-      </section>
-      <section id="loadingSection">
-        <p id="loadingText" class="loading-text">Загрузка…</p>
-      </section>
-      <section id="partnerSection" hidden>
-        <p class="section-label">▶ Партнёр</p>
-        <div id="partnerLines" class="lines-list"></div>
-      </section>
       <section id="actorSection" hidden>
         <p class="section-label">⏺ Ваша реплика</p>
         <div id="actorLine" class="actor-line"></div>
@@ -352,6 +390,21 @@
         </div>
         <button id="skipBtn" class="btn-skip">Готово →</button>
       </section>
+      <section id="sceneOverviewSection" class="scene-overview" hidden>
+        <div class="scene-summary">
+          <div id="sceneSummaryMain" class="scene-summary-main"></div>
+          <div id="sceneSummaryNext" class="scene-summary-next"></div>
+        </div>
+        <div id="sceneTimeline" class="scene-timeline"></div>
+      </section>
+      <section id="loadingSection" hidden>
+        <p id="loadingText" class="loading-text">Загрузка…</p>
+      </section>
+      <section id="partnerSection" hidden>
+        <p class="section-label">▶ Партнёр</p>
+        <div id="partnerLines" class="lines-list"></div>
+      </section>
+      
     </div>
   </main>
 

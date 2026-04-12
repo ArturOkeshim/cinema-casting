@@ -1,4 +1,5 @@
 import { resetAllAppData } from './resetAll.js';
+import { downloadSessionBackupZip, pickAndImportSessionBackup } from './sessionBackup.js';
 
 /**
  * Общая панель этапов: Сценарий → Роль → Запись → Репетиция → Итог.
@@ -36,7 +37,7 @@ export function initStageNav(current, opts = {}) {
         flex-wrap: wrap;
         align-items: center;
         gap: 8px;
-        max-width: 960px;
+        max-width: 1200px;
         margin: 0 auto;
         justify-content: center;
       }
@@ -63,7 +64,7 @@ export function initStageNav(current, opts = {}) {
         color: #fff;
       }
       .stage-nav-row {
-        max-width: 960px;
+        max-width: 1200px;
         margin: 0 auto;
         display: flex;
         flex-wrap: wrap;
@@ -92,6 +93,30 @@ export function initStageNav(current, opts = {}) {
         opacity: 0.5;
         cursor: not-allowed;
       }
+      .stage-nav-save,
+      .stage-nav-load {
+        border: 1px solid #3d4d8a;
+        border-radius: 999px;
+        padding: 7px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        background: rgba(79, 124, 255, 0.12);
+        color: #c7d4ff;
+        flex-shrink: 0;
+      }
+      .stage-nav-save:hover,
+      .stage-nav-load:hover {
+        background: rgba(79, 124, 255, 0.22);
+        border-color: #4f7cff;
+        color: #fff;
+      }
+      .stage-nav-save:disabled,
+      .stage-nav-load:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -117,6 +142,42 @@ export function initStageNav(current, opts = {}) {
     inner.appendChild(a);
   }
 
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'stage-nav-save';
+  saveBtn.textContent = 'Сохранить пробу';
+  saveBtn.title =
+    'Скачать ZIP: session.json (сценарий, блоки, роль, прогресс) и папка audio с записями';
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    try {
+      await downloadSessionBackupZip();
+    } catch (e) {
+      console.error(e);
+      window.alert('Не удалось сохранить архив. Попробуйте ещё раз.');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  const loadBtn = document.createElement('button');
+  loadBtn.type = 'button';
+  loadBtn.className = 'stage-nav-load';
+  loadBtn.textContent = 'Загрузить пробу';
+  loadBtn.title = 'Восстановить из ZIP (или старого JSON с вложенным audio). Текущие данные будут заменены.';
+  loadBtn.addEventListener('click', () => {
+    const ok = window.confirm(
+      'Заменить текущие данные пробы содержимым файла?\n\n' +
+        'Подойдёт архив .zip (session.json + audio/) или одиночный .json из старого экспорта.'
+    );
+    if (!ok) return;
+    pickAndImportSessionBackup({
+      onError(msg) {
+        window.alert(`Не удалось загрузить пробу: ${msg}`);
+      },
+    });
+  });
+
   const resetBtn = document.createElement('button');
   resetBtn.type = 'button';
   resetBtn.className = 'stage-nav-reset';
@@ -141,6 +202,8 @@ export function initStageNav(current, opts = {}) {
   });
 
   row.appendChild(inner);
+  row.appendChild(saveBtn);
+  row.appendChild(loadBtn);
   row.appendChild(resetBtn);
   nav.appendChild(row);
 

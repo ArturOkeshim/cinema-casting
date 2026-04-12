@@ -1,6 +1,7 @@
 /**
  * Hybrid scorer — порт алгоритма из script.py.
- * Метрика: coverage (LCS по словам) + fuzzy (LCS по символам) + tail (совпадение хвоста).
+ * Фокус на концовке: начало/середина влияют слабо (coverage/fuzzy), итог в основном
+ * определяется совпадением последних слов эталона (tail).
  */
 
 export function normalizeText(text) {
@@ -35,14 +36,24 @@ function seqRatio(a, b) {
   return (2 * lcsLength(a, b)) / (a.length + b.length);
 }
 
-/** Более мягкий порог хвоста — допускаем частичный пропуск служебных слов. */
-export const MIN_TAIL_SCORE = 0.6;
+/** Минимум по хвосту: здесь держим планку выше — концовку проговаривают чётко. */
+export const MIN_TAIL_SCORE = 0.78;
+
+/** Сколько последних слов эталона сравниваем с окном гипотезы (строже к финалу фразы). */
+const TAIL_REF_WORDS = 4;
+/** Окно в гипотезе: с запасом под ошибки сегментации ASR. */
+const TAIL_HYP_WORDS = 10;
+
+const WEIGHT_COVERAGE = 0.1;
+const WEIGHT_FUZZY = 0.1;
+const WEIGHT_TAIL = 0.8;
 
 export function adaptiveThresholds(reference) {
   const n = normalizeText(reference).split(' ').filter(Boolean).length;
-  if (n <= 15) return { minLenRatio: 0.75, scoreThreshold: 0.82 };
-  if (n <= 50) return { minLenRatio: 0.72, scoreThreshold: 0.77 };
-  return            { minLenRatio: 0.66, scoreThreshold: 0.72 };
+  // Композитный score в основном из tail — пороги ниже; длину допускаем свободнее.
+  if (n <= 15) return { minLenRatio: 0.58, scoreThreshold: 0.68 };
+  if (n <= 50) return { minLenRatio: 0.52, scoreThreshold: 0.63 };
+  return { minLenRatio: 0.48, scoreThreshold: 0.58 };
 }
 
 export function calcScore(reference, hypothesis) {
@@ -59,12 +70,13 @@ export function calcScore(reference, hypothesis) {
   const coverage  = lcsLength(refWords, hypWords) / refWords.length;
   const fuzzy     = seqRatio([...refNorm], [...hypNorm]);
 
-  const tailCount    = Math.min(3, refWords.length);
+  const tailCount = Math.min(TAIL_REF_WORDS, refWords.length);
   const tailRefWords = refWords.slice(-tailCount);
-  const tailHypWords = hypWords.slice(-6);
+  const tailHypWords = hypWords.slice(-TAIL_HYP_WORDS);
   // Пословное покрытие: сколько из последних слов эталона найдено в окне гипотезы (LCS)
   const tail = lcsLength(tailRefWords, tailHypWords) / tailRefWords.length;
 
-  const score = 0.30 * coverage + 0.35 * fuzzy + 0.35 * tail;
+  const score =
+    WEIGHT_COVERAGE * coverage + WEIGHT_FUZZY * fuzzy + WEIGHT_TAIL * tail;
   return { score, coverage, fuzzy, lenRatio, tail };
 }

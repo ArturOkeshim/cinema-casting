@@ -45,20 +45,29 @@ async function dbClear() {
   });
 }
 
+/**
+ * Удалить все ключи, начинающиеся с prefix.
+ * Обход через openKeyCursor + cursor.delete() в Firefox иногда даёт
+ * DOMException «mutation operation... did not allow mutations» — надёжнее getAllKeys + delete.
+ */
 async function dbDeleteKeyPrefix(prefix) {
   const db = await openDb();
+  const keysToDelete = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).getAllKeys();
+    req.onsuccess = () => {
+      const all = req.result || [];
+      resolve(all.filter((k) => String(k).startsWith(prefix)));
+    };
+    req.onerror = () => reject(req.error);
+  });
+  if (keysToDelete.length === 0) return;
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
     const os = tx.objectStore(STORE);
-    const req = os.openKeyCursor();
-    req.onerror = () => reject(req.error);
-    req.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (!cursor) return;
-      const k = String(cursor.key);
-      if (k.startsWith(prefix)) cursor.delete();
-      cursor.continue();
-    };
+    for (const key of keysToDelete) {
+      os.delete(key);
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -82,3 +91,48 @@ export const clearAllSessionAudio = async () => {
   await clearPartnerClips();
   await clearActorClips();
 };
+
+/**
+ * Все записи в хранилище (partner_*, actor_*).
+ * @returns {Promise<Array<{ key: string, blob: Blob }>>}
+ */
+export async function getAllAudioClips() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const out = [];
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).openCursor();
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (!cur) {
+        resolve(out);
+        return;
+      }
+      const val = cur.value;
+      if (val instanceof Blob) {
+        out.push({ key: String(cur.key), blob: val });
+      }
+      cur.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Полная замена содержимого хранилища (импорт бэкапа).
+ * @param {Array<{ key: string, blob: Blob }>} entries
+ */
+export async function replaceAllAudioClips(entries) {
+  await dbClear();
+  if (!entries.length) return;
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const os = tx.objectStore(STORE);
+    for (const { key, blob } of entries) {
+      if (blob instanceof Blob) os.put(blob, key);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
