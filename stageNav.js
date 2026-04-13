@@ -128,6 +128,92 @@ export function initStageNav(current, opts = {}) {
         opacity: 0.5;
         cursor: not-allowed;
       }
+      .stage-nav-mobile {
+        display: none;
+      }
+      .stage-nav-mobile__arrow[hidden] {
+        display: block;
+        visibility: hidden;
+      }
+      @media (max-width: 768px) {
+        .stage-nav {
+          display: none;
+        }
+        .stage-nav-wrap {
+          padding: 8px 0;
+        }
+        .stage-nav-mobile {
+          display: grid;
+          grid-template-columns: 34px 1fr 34px;
+          align-items: center;
+          gap: 6px;
+          width: auto;
+          max-width: calc(100vw - 140px);
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .stage-nav-mobile__arrow {
+          width: 34px;
+          height: 34px;
+          border: 1px solid #2a355f;
+          border-radius: 9px;
+          background: #1a2240;
+          color: #e7ecff;
+          font-size: 17px;
+          font-weight: 700;
+          line-height: 1;
+          cursor: pointer;
+          padding: 0;
+        }
+        .stage-nav-mobile__current {
+          text-align: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #e7ecff;
+          background: #1a2240;
+          border: 1px solid #2a355f;
+          border-radius: 9px;
+          padding: 8px 6px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+        }
+        .stage-nav-row {
+          flex-wrap: nowrap;
+          justify-content: space-between;
+          gap: 6px;
+          width: 100%;
+          padding-right: 6px;
+        }
+        .stage-nav-save,
+        .stage-nav-load,
+        .stage-nav-reset {
+          width: 32px;
+          height: 32px;
+          padding: 0;
+          border-radius: 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0;
+          line-height: 1;
+        }
+        .stage-nav-save::before,
+        .stage-nav-load::before,
+        .stage-nav-reset::before {
+          font-size: 16px;
+        }
+        .stage-nav-save::before {
+          content: "💾";
+        }
+        .stage-nav-load::before {
+          content: "📂";
+        }
+        .stage-nav-reset::before {
+          content: "🗑";
+        }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -151,6 +237,7 @@ export function initStageNav(current, opts = {}) {
   const sequence = hasBlocks && hasRole ? buildSequence(blocks, role) : [];
   const cursor = loadRehearsalCursor();
   const isRehearsalDone = sequence.length > 0 && cursor >= sequence.length;
+  const stageStates = []
 
   for (const s of stages) {
     const a = document.createElement('a');
@@ -179,13 +266,69 @@ export function initStageNav(current, opts = {}) {
       a.classList.add('current');
       a.setAttribute('aria-current', 'step');
     }
+
+    stageStates.push({
+      id: s.id,
+      label: s.label,
+      href: s.href,
+      isLocked,
+      isCurrent: s.id === current
+    });
+
     inner.appendChild(a);
   }
+
+  /*
+  Создаем мобильную версию навигации
+  */
+  const mobileNav = document.createElement('div');
+  mobileNav.className = 'stage-nav-mobile';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type='button';
+  prevBtn.className='stage-nav-mobile__arrow';
+  prevBtn.textContent = '←';
+  const nextBtn = document.createElement('button');
+  nextBtn.type='button';
+  nextBtn.className='stage-nav-mobile__arrow';
+  nextBtn.textContent='→';
+
+  const currentLabel = document.createElement('span');
+  currentLabel.className='stage-nav-mobile__current';
+  
+
+  const currentIndex = stageStates.findIndex((x)=> x.isCurrent);
+  const currentStage = currentIndex >= 0 ? stageStates[currentIndex] : null;
+  currentLabel.textContent = currentStage ? currentStage.label : 'Этап';
+
+  const prevStage = (currentIndex-1) >= 0 ? stageStates[(currentIndex-1)] : null;
+  if (!prevStage || prevStage.isLocked) {
+    prevBtn.hidden = true;
+  } else {
+    prevBtn.addEventListener('click', ()=> {
+      window.location.href= prevStage.href;
+    })
+  }
+  const nextStage = (currentIndex+1) < stageStates.length ? stageStates[(currentIndex+1)] : null;
+  if (!nextStage || nextStage.isLocked) {
+    nextBtn.hidden = true;
+  } else {
+    nextBtn.addEventListener('click', ()=> {
+      window.location.href= nextStage.href;
+    })
+  };
+
+  mobileNav.appendChild(prevBtn);
+  mobileNav.appendChild(currentLabel);
+  mobileNav.appendChild(nextBtn)
+  row.appendChild(mobileNav);
+
 
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'stage-nav-save';
   saveBtn.textContent = 'Сохранить пробу';
+  saveBtn.setAttribute('aria-label', 'Сохранить пробу');
   saveBtn.title =
     'Скачать ZIP: session.json (сценарий, блоки, роль, прогресс) и папка audio с записями';
   saveBtn.addEventListener('click', async () => {
@@ -204,6 +347,7 @@ export function initStageNav(current, opts = {}) {
   loadBtn.type = 'button';
   loadBtn.className = 'stage-nav-load';
   loadBtn.textContent = 'Загрузить пробу';
+  loadBtn.setAttribute('aria-label', 'Загрузить пробу');
   loadBtn.title = 'Восстановить из ZIP (или старого JSON с вложенным audio). Текущие данные будут заменены.';
   loadBtn.addEventListener('click', () => {
     const ok = window.confirm(
@@ -222,6 +366,7 @@ export function initStageNav(current, opts = {}) {
   resetBtn.type = 'button';
   resetBtn.className = 'stage-nav-reset';
   resetBtn.textContent = 'Сбросить всё';
+  resetBtn.setAttribute('aria-label', 'Сбросить всё');
   resetBtn.title = 'Очистить текст сценария, разбор, роль и все аудиозаписи';
   resetBtn.addEventListener('click', async () => {
     const ok = window.confirm(
@@ -241,11 +386,15 @@ export function initStageNav(current, opts = {}) {
     }
   });
 
+  
+
   row.appendChild(inner);
   row.appendChild(saveBtn);
   row.appendChild(loadBtn);
   row.appendChild(resetBtn);
   nav.appendChild(row);
+
+  nav.classList.add('stage-nav--full')
 
   const target = opts.prependTo ?? document.querySelector('main');
   if (target) {
