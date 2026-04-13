@@ -1,10 +1,11 @@
 import { initStageNav } from "./stageNav.js";
-import { saveBlocks, saveScriptText, loadScriptText, clearRehearsalCursor, saveRole } from "./flowState.js";
+import { saveBlocks, saveScriptText, loadScriptText, clearRehearsalCursor, saveRole, savePartnerAudioReady } from "./flowState.js";
 import { clearAllSessionAudio } from "./audioDb.js";
 
 const scriptInput = document.getElementById("scriptInput");
 const processBtn = document.getElementById("processBtn");
 const status = document.getElementById("status");
+const loadingScreen = document.getElementById("loadingScreen");
 
 initStageNav("script");
 
@@ -21,7 +22,23 @@ scriptInput.addEventListener("input", () => {
 window.addEventListener("beforeunload", () => saveScriptText(scriptInput.value));
 
 function setStatus(text) {
+  if (!status) {
+    console.info("[status]", text);
+    return;
+  }
   status.textContent = text;
+}
+
+function showLoadingOverlay() {
+  if (!loadingScreen) return;
+  loadingScreen.classList.add("is-visible");
+  loadingScreen.setAttribute("aria-hidden", "false");
+}
+
+function hideLoadingOverlay() {
+  if (!loadingScreen) return;
+  loadingScreen.classList.remove("is-visible");
+  loadingScreen.setAttribute("aria-hidden", "true");
 }
 
 function buildPrompt(sceneText) {
@@ -235,6 +252,7 @@ async function processScriptText(sceneText) {
   const blocks = await requestRoleSplit({ sceneText });
   await clearAllSessionAudio();
   clearRehearsalCursor();
+  savePartnerAudioReady(false);
   saveRole("");
   saveBlocks(blocks);
   console.log("Role blocks:", blocks);
@@ -251,6 +269,7 @@ processBtn.addEventListener("click", async () => {
 
   processBtn.disabled = true;
   setStatus("Обрабатываем текст...");
+  showLoadingOverlay();
 
   try {
     saveScriptText(text);
@@ -262,6 +281,7 @@ processBtn.addEventListener("click", async () => {
     setStatus(`Ошибка: ${message}`);
     console.error(error);
   } finally {
+    hideLoadingOverlay();
     processBtn.disabled = false;
   }
 });

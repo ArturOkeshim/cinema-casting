@@ -1,5 +1,5 @@
 import { initStageNav } from './stageNav.js';
-import { loadBlocks, loadRole } from './flowState.js';
+import { loadBlocks, loadRole, savePartnerAudioReady } from './flowState.js';
 import { storePartnerAudio, clearPartnerClips, getPartnerAudio } from './audioDb.js';
 
 initStageNav('record');
@@ -277,6 +277,7 @@ proceedBtn.addEventListener('click', async () => {
     for (const [segmentId, { blob }] of audioStore) {
       await storePartnerAudio(segmentId, blob);
     }
+    savePartnerAudioReady(true);
     window.location.href = './rehearsal.html';
   } catch (err) {
     console.error(err);

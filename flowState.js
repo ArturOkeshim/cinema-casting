@@ -4,6 +4,7 @@ export const BLOCKS_KEY = 'cinemaCasting.roleBlocks';
 export const ROLE_KEY = 'cinemaCasting.selectedRole';
 export const SCRIPT_TEXT_KEY = 'cinemaCasting.scriptText';
 export const REHEARSAL_CURSOR_KEY = 'cinemaCasting.rehearsalCursor';
+export const PARTNER_AUDIO_READY_KEY = 'cinemaCasting.partnerAudioReady';
 
 export function loadScriptText() {
   return (
@@ -86,7 +87,25 @@ export function saveRehearsalCursor(idx) {
   }
 }
 
-const ALL_FLOW_KEYS = [BLOCKS_KEY, ROLE_KEY, SCRIPT_TEXT_KEY, REHEARSAL_CURSOR_KEY];
+export function loadPartnerAudioReady() {
+  const raw =
+    localStorage.getItem(PARTNER_AUDIO_READY_KEY) ||
+    sessionStorage.getItem(PARTNER_AUDIO_READY_KEY) ||
+    '';
+  return raw === '1';
+}
+
+export function savePartnerAudioReady(isReady) {
+  const v = isReady ? '1' : '0';
+  try {
+    localStorage.setItem(PARTNER_AUDIO_READY_KEY, v);
+    sessionStorage.setItem(PARTNER_AUDIO_READY_KEY, v);
+  } catch {
+    sessionStorage.setItem(PARTNER_AUDIO_READY_KEY, v);
+  }
+}
+
+const ALL_FLOW_KEYS = [BLOCKS_KEY, ROLE_KEY, SCRIPT_TEXT_KEY, REHEARSAL_CURSOR_KEY, PARTNER_AUDIO_READY_KEY];
 
 /** Сценарий, блоки, роль, курсор репетиции — localStorage и sessionStorage. */
 export function clearAllFlowState() {

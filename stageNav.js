@@ -1,5 +1,7 @@
 import { resetAllAppData } from './resetAll.js';
 import { downloadSessionBackupZip, pickAndImportSessionBackup } from './sessionBackup.js';
+import { loadBlocks, loadRole, loadRehearsalCursor, loadPartnerAudioReady } from './flowState.js';
+import { buildSequence } from './rehearsalSequence.js';
 
 /**
  * Общая панель этапов: Сценарий → Роль → Запись → Репетиция → Итог.
@@ -62,6 +64,15 @@ export function initStageNav(current, opts = {}) {
         background: #4f7cff;
         border-color: #4f7cff;
         color: #fff;
+      }
+      .stage-nav a.locked {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .stage-nav a.locked:hover {
+        color: #b9c5f5;
+        border-color: #2a355f;
+        background: #1a2240;
       }
       .stage-nav-row {
         max-width: 1200px;
@@ -131,10 +142,39 @@ export function initStageNav(current, opts = {}) {
   inner.className = 'stage-nav';
   inner.setAttribute('aria-label', 'Этапы пробы');
 
+
+  const blocks = loadBlocks();
+  const role = loadRole();
+  const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
+  const hasRole = Boolean(role && role.trim());
+  const isPartnerAudioReady = loadPartnerAudioReady();
+  const sequence = hasBlocks && hasRole ? buildSequence(blocks, role) : [];
+  const cursor = loadRehearsalCursor();
+  const isRehearsalDone = sequence.length > 0 && cursor >= sequence.length;
+
   for (const s of stages) {
     const a = document.createElement('a');
     a.href = s.href;
     a.textContent = s.label;
+
+    let isLocked = false;
+    if (s.id === 'role') {
+      isLocked = !hasBlocks;
+    } else if (s.id === 'record') {
+      isLocked = !hasBlocks || !hasRole;
+    } else if (s.id === 'rehearsal') {
+      isLocked = !hasBlocks || !hasRole || !isPartnerAudioReady;
+    } else if (s.id === 'result') {
+      isLocked = !isRehearsalDone;
+    }
+
+    if (isLocked) {
+      a.classList.add('locked');
+      a.setAttribute('aria-disabled', 'true');
+      a.setAttribute('tabindex', '-1');
+      a.addEventListener('click', (e) => e.preventDefault());
+    }
+
     if (s.id === current) {
       a.classList.add('current');
       a.setAttribute('aria-current', 'step');

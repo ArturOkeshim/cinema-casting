@@ -1,5 +1,5 @@
 import { initStageNav } from "./stageNav.js";
-import { loadBlocks, saveBlocks, saveRole, loadRole, clearRehearsalCursor } from "./flowState.js";
+import { loadBlocks, saveBlocks, saveRole, loadRole, clearRehearsalCursor, savePartnerAudioReady } from "./flowState.js";
 import { clearActorClips, clearPartnerClips } from "./audioDb.js";
 
 initStageNav("role");
@@ -191,6 +191,7 @@ function bindRolePicker() {
       await clearPartnerClips();
     }
     clearRehearsalCursor();
+    savePartnerAudioReady(false);
     saveRole(selectedRole);
     window.location.href = "./prep.html";
   });

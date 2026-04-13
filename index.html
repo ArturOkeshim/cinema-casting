@@ -95,22 +95,56 @@
     .quick-link:hover {
       text-decoration: underline;
     }
+    .loadingScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      place-items: center;
+      background: rgba(2, 8, 24, 0.72);
+      backdrop-filter: blur(2px);
+    }
+    .loadingScreen.is-visible {
+      display: grid;
+    }
+    .loadingScreen__panel {
+      width: min(700px, 90vw);
+      padding: 20px 24px;
+      border-radius: 14px;
+      border: 1px solid #2a355f;
+      background: #151b31;
+      color: #e7ecff;
+      text-align: center;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    }
+    .loadingScreen__panel h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+    .loadingScreen__panel p {
+      margin: 0;
+      color: #b9c5f5;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <main class="card">
     <h1>Подготовка текста пробы</h1>
-    <p>Вставь текст сцены, затем нажми кнопку, чтобы передать его в обработку.</p>
+    <p>Вставь текст сцены, затем нажми кнопку "Обработать" - алгоритм сам определит роли.</p>
 
-    <label for="scriptInput">Текст пробы</label>
-    <textarea id="scriptInput" placeholder="Вставь сюда текст..."></textarea>
+    <textarea id="scriptInput" placeholder="Вставь сюда текст сценария"></textarea>
 
     <div class="actions">
       <button id="processBtn" type="button">Обработать</button>
-      <span id="status" class="status">Ожидается ввод текста.</span>
     </div>
-    <a class="quick-link" href="./eos_test.html">Открыть тест завершения речи</a>
   </main>
+  <div id="loadingScreen" class="loadingScreen" aria-hidden="true">
+    <div class="loadingScreen__panel">
+      <h2>Обрабатываем сценарий...</h2>
+      <p>Разбираем текст на блоки и роли. Обычно у пленных индусов в нашем дата-центре это занимает до 30 секунд.</p>
+    </div>
+  </div>
 
   <script type="module" src="./app.js"></script>
 </body>
