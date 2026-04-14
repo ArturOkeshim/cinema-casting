@@ -3,7 +3,7 @@ import { loadBlocks, loadRole, loadRehearsalCursor } from './flowState.js';
 import { getPartnerAudio, getActorRecording } from './audioDb.js';
 import { buildSequence, extractSpeakable, escapeHtml } from './rehearsalSequence.js';
 
-initStageNav('result', { prependTo: document.body });
+initStageNav('result');
 
 const playAllBtn = document.getElementById('playAllBtn');
 const resultListEl = document.getElementById('resultList');

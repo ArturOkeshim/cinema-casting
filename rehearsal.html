@@ -11,10 +11,19 @@
       --rehearsal-actor-sticky-top: 58px;
     }
 
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0b1020;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
       color: #e7ecff;
     }
 
@@ -29,9 +38,10 @@
     }
 
     .layout {
-      width: min(1200px, 96vw);
+      width: 100%;
+      min-height: 100vh;
       margin: 0 auto;
-      padding: 24px 0 60px;
+      padding: 24px clamp(16px, 4vw, 40px) 60px;
     }
 
     /* Колонка: шапка → суфлёр → обзор; обзор крутится отдельно, чтобы реплика не уезжала вниз экрана */
@@ -97,6 +107,7 @@
       font-size: 15px;
       color: #b9c5f5;
       line-height: 1.55;
+      overflow-wrap: anywhere;
     }
 
     .scene-timeline {
@@ -188,6 +199,7 @@
     .timeline-line-text {
       flex: 1;
       min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     /* ── sections ── */
@@ -225,6 +237,7 @@
       font-size: 19px;
       color: #c7d0f6;
       line-height: 1.65;
+      overflow-wrap: anywhere;
     }
 
     /* ── actor teleprompter ── */
@@ -363,6 +376,29 @@
     }
     .start-gate .btn-primary {
       margin-bottom: 0;
+    }
+
+    @media (max-width: 760px) {
+      .layout {
+        padding-inline: 12px;
+      }
+
+      .timeline-item {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-badge {
+        min-width: 0;
+      }
+
+      .line-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .line-role {
+        min-width: 0;
+      }
     }
   </style>
 </head>

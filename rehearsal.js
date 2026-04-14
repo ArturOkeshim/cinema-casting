@@ -5,7 +5,7 @@ import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
 import { extractSpeakable, escapeHtml, buildSequence } from './rehearsalSequence.js';
 
-initStageNav('rehearsal', { prependTo: document.body });
+initStageNav('rehearsal');
 
 // ── Состояние ──────────────────────────────────────────────────────────────
 let sequence   = [];   // [{ type:'partner'|'actor', segId?, lines?, line? }]

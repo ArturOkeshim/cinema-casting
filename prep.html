@@ -9,24 +9,36 @@
       font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
     }
 
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0b1020;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
       color: #e7ecff;
     }
 
     .layout {
-      width: min(1200px, 96vw);
-      margin: 26px auto 60px;
+      width: 100%;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 26px clamp(16px, 4vw, 40px) 60px;
     }
 
-    h1 { margin: 0 0 6px; font-size: 24px; }
+    h1 { margin: 0 0 6px; font-size: 30px; }
 
     .sub {
       margin: 0 0 6px;
       color: #b9c5f5;
-      font-size: 14px;
+      font-size: 17px;
+      line-height: 1.5;
     }
 
     .actor-role {
@@ -37,7 +49,7 @@
       background: #34d399;
       color: #0b1020;
       font-weight: 700;
-      font-size: 13px;
+      font-size: 15px;
     }
 
     .top-actions {
@@ -52,7 +64,7 @@
       background: #2a355f;
       color: #ffffff;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 16px;
     }
 
     .segments { display: grid; gap: 16px; }
@@ -74,14 +86,14 @@
     }
 
     .segment-number {
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 700;
       color: #9fc0ff;
     }
 
     .segment-status {
       margin-left: auto;
-      font-size: 12px;
+      font-size: 14px;
       padding: 3px 10px;
       border-radius: 20px;
       font-weight: 600;
@@ -107,7 +119,7 @@
     .line-row { display: flex; gap: 10px; align-items: baseline; }
 
     .line-role {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 700;
       color: #9fc0ff;
       min-width: 110px;
@@ -115,9 +127,10 @@
     }
 
     .line-text {
-      font-size: 14px;
+      font-size: 16px;
       color: #c7d0f6;
       line-height: 1.5;
+      overflow-wrap: anywhere;
     }
 
     .inline-annotation {
@@ -139,7 +152,7 @@
       border-radius: 10px;
       padding: 8px 16px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
     }
 
@@ -148,7 +161,7 @@
     .btn-record.recording { background: #ef4444; animation: pulse 1s infinite; }
     .btn-stop { background: #374270; color: #e7ecff; }
     .btn-stop:hover { background: #44548f; }
-    .btn-rerecord { background: #2a355f; color: #b9c5f5; font-size: 13px; }
+    .btn-rerecord { background: #2a355f; color: #b9c5f5; font-size: 14px; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -161,7 +174,7 @@
       border-radius: 10px;
       background: #2a355f;
       color: #b9c5f5;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       cursor: pointer;
     }
@@ -177,10 +190,10 @@
       flex-wrap: wrap;
     }
 
-    audio { height: 36px; border-radius: 8px; max-width: 280px; }
+    audio { height: 36px; border-radius: 8px; max-width: 100%; }
 
     .file-name {
-      font-size: 12px;
+      font-size: 14px;
       color: #6b7db3;
       max-width: 180px;
       overflow: hidden;
@@ -220,8 +233,44 @@
     }
 
     .progress-label {
-      font-size: 14px;
+      font-size: 16px;
       color: #b9c5f5;
+    }
+
+    @media (max-width: 760px) {
+      .layout {
+        padding-inline: 12px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .sub {
+        font-size: 16px;
+      }
+
+      .segment-header {
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+
+      .segment-status {
+        margin-left: 0;
+      }
+
+      .line-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .line-role {
+        min-width: 0;
+      }
+
+      .footer {
+        flex-wrap: wrap;
+      }
     }
   </style>
 </head>

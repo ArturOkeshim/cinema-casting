@@ -30,9 +30,9 @@ export function initStageNav(current, opts = {}) {
         z-index: 100;
         margin: 0 0 18px;
         padding: 10px 0 12px;
-        background: rgba(11, 16, 32, 0.94);
-        border-bottom: 1px solid #2a355f;
-        backdrop-filter: blur(8px);
+        background: transparent;
+        border-bottom: none;
+        backdrop-filter: none;
       }
       .stage-nav {
         display: flex;

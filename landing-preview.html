@@ -25,10 +25,9 @@
     }
 
     .wrap {
-      width: 100%;
-      min-height: 100vh;
+      width: min(1080px, 94vw);
       margin: 0 auto;
-      padding: 42px clamp(16px, 4vw, 40px) 54px;
+      padding: 42px 0 54px;
     }
 
     .hero {
@@ -53,7 +52,7 @@
 
     .card {
       margin: 24px auto 20px;
-      width: 100%;
+      width: min(980px, 100%);
       padding: 22px;
       border-radius: 16px;
       border: 1px solid #2d3a67;
@@ -64,12 +63,12 @@
 
     .card h2 {
       margin: 0 0 8px;
-      font-size: 24px;
+      font-size: 20px;
     }
 
     .card p {
       margin: 0 0 14px;
-      font-size: 16px;
+      font-size: 14px;
       color: #aebded;
     }
 
@@ -81,7 +80,7 @@
       background: #0e1430;
       color: #f5f7ff;
       font: inherit;
-      font-size: 18px;
+      font-size: 16px;
       line-height: 1.5;
       padding: 14px 16px;
       resize: vertical;
@@ -99,60 +98,28 @@
       flex-wrap: wrap;
     }
 
-    button {
+    .btn-primary {
       border: none;
       border-radius: 10px;
       padding: 12px 20px;
       cursor: pointer;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
       background: #4f7cff;
       color: #ffffff;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    button:hover {
+    .btn-primary:hover {
       background: #6c96ff;
     }
 
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .loadingScreen {
-      position: fixed;
-      inset: 0;
-      z-index: 2000;
-      display: none;
-      place-items: center;
-      background: rgba(2, 8, 24, 0.72);
-      backdrop-filter: blur(2px);
-    }
-
-    .loadingScreen.is-visible {
-      display: grid;
-    }
-
-    .loadingScreen__panel {
-      width: min(700px, 90vw);
-      padding: 20px 24px;
-      border-radius: 14px;
-      border: 1px solid #2a355f;
-      background: #151b31;
-      color: #e7ecff;
-      text-align: center;
-      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
-    }
-
-    .loadingScreen__panel h2 {
-      margin: 0 0 8px;
-      font-size: 22px;
-    }
-
-    .loadingScreen__panel p {
-      margin: 0;
-      color: #b9c5f5;
-      font-size: 14px;
+    .hint {
+      font-size: 13px;
+      color: #9fb2ea;
     }
 
     @media (max-width: 560px) {
@@ -180,20 +147,12 @@
     <section class="card">
       <h2>Вставьте текст пробы</h2>
       <p>Подойдет диалог, сцена или фрагмент сценария. Сервис автоматически разделит текст по ролям.</p>
-      <textarea id="scriptInput" placeholder="Вставьте сюда текст сценария..."></textarea>
+      <textarea id="landingScriptInput" placeholder="Вставьте сюда текст сценария..."></textarea>
       <div class="actions">
-        <button id="processBtn" type="button">Обработать</button>
+        <a class="btn-primary" href="./index.html">Обработать</a>
       </div>
     </section>
+
   </main>
-
-  <div id="loadingScreen" class="loadingScreen" aria-hidden="true">
-    <div class="loadingScreen__panel">
-      <h2>Обрабатываем сценарий...</h2>
-      <p>Подождите немного, скоро продолжим.</p>
-    </div>
-  </div>
-
-  <script type="module" src="./app.js"></script>
 </body>
 </html>

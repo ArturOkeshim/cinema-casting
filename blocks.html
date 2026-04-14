@@ -10,26 +10,39 @@
       font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
     }
 
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0b1020;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
       color: #e7ecff;
     }
 
     .layout {
-      width: min(1200px, 96vw);
-      margin: 26px auto 40px;
+      width: 100%;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 26px clamp(16px, 4vw, 40px) 40px;
     }
 
     h1 {
       margin: 0 0 8px;
-      font-size: 26px;
+      font-size: 30px;
     }
 
     .sub {
       margin: 0 0 18px;
       color: #b9c5f5;
+      font-size: 17px;
+      line-height: 1.5;
     }
 
     .actions {
@@ -44,6 +57,7 @@
       background: #2a355f;
       color: #ffffff;
       font-weight: 600;
+      font-size: 16px;
     }
 
     .empty {
@@ -66,11 +80,12 @@
       background: #151b31;
       padding: 14px 14px 12px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      position: relative;
     }
 
     .role {
-      margin: 0 0 8px;
-      font-size: 15px;
+      margin: 0 120px 8px 0;
+      font-size: 17px;
       color: #9fc0ff;
       font-weight: 700;
       letter-spacing: 0.2px;
@@ -81,14 +96,15 @@
       white-space: pre-wrap;
       line-height: 1.5;
       color: #eef2ff;
-      font-size: 15px;
+      font-size: 17px;
+      overflow-wrap: anywhere;
     }
 
     .annotation {
       margin: 0;
       padding: 2px 10px;
       font-style: italic;
-      font-size: 13px;
+      font-size: 15px;
       color: #6b7db3;
       line-height: 1.5;
     }
@@ -110,7 +126,7 @@
     .role-picker-label {
       display: block;
       margin-bottom: 10px;
-      font-size: 13px;
+      font-size: 15px;
       color: #b9c5f5;
     }
 
@@ -120,7 +136,7 @@
       border-radius: 10px;
       padding: 10px 20px;
       cursor: pointer;
-      font-size: 15px;
+      font-size: 17px;
       font-weight: 600;
       background: #34d399;
       color: #0b1020;
@@ -142,7 +158,7 @@
       border: 1px solid #44548f;
       background: transparent;
       color: #b9c5f5;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       cursor: pointer;
     }
@@ -172,16 +188,17 @@
     }
 
     .block-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 8px;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      margin: 0;
     }
 
     .block-edit-btn {
       border: 1px solid #44548f;
       border-radius: 8px;
       padding: 6px 12px;
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 600;
       font-family: inherit;
       cursor: pointer;
@@ -195,6 +212,9 @@
     }
 
     .block--annotation .block-actions {
+      position: static;
+      display: flex;
+      justify-content: flex-end;
       margin-bottom: 4px;
     }
 
@@ -206,7 +226,7 @@
     .block-edit-form label {
       display: grid;
       gap: 6px;
-      font-size: 12px;
+      font-size: 14px;
       color: #9fc0ff;
     }
 
@@ -218,7 +238,7 @@
       border: 1px solid #44548f;
       background: #0e1430;
       color: #f4f7ff;
-      font-size: 15px;
+      font-size: 17px;
       font-family: inherit;
       padding: 10px 12px;
     }
@@ -240,7 +260,7 @@
       border-radius: 10px;
       padding: 9px 16px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       background: #4f7cff;
       color: #fff;
@@ -255,7 +275,7 @@
       border-radius: 10px;
       padding: 9px 16px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       background: transparent;
       color: #b9c5f5;
@@ -265,14 +285,28 @@
       border-color: #6b7db3;
       color: #e7ecff;
     }
+
+    @media (max-width: 760px) {
+      .layout {
+        padding-inline: 12px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .sub {
+        font-size: 16px;
+      }
+    }
   </style>
 </head>
 <body>
   <main class="layout">
     <h1>Разбор по блокам</h1>
-    <p class="sub">Каждая реплика выделена отдельным блоком в порядке сцены. При необходимости отредактируйте блок и нажмите «Сохранить» — правки запоминаются в браузере.</p>
+    <p class="sub">Каждая реплика выделена отдельным блоком в порядке сцены. При необходимости отредактируйте блок и нажмите «Сохранить».</p>
     <div class="actions">
-      <a class="link-btn" href="./index.html">Назад к вводу</a>
+      <a class="link-btn" href="./index.html">Назад к сценарию</a>
     </div>
     <div id="rolePicker" class="role-picker" hidden>
       <span class="role-picker-label">Я читаю за:</span>

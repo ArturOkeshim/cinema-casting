@@ -7,28 +7,38 @@
   <style>
     :root { font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; }
 
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
-      background: #0b1020;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
       color: #e7ecff;
     }
 
     .layout {
-      width: min(1200px, 96vw);
+      width: 100%;
+      min-height: 100vh;
       margin: 0 auto;
-      padding: 24px 0 60px;
+      padding: 24px clamp(16px, 4vw, 40px) 60px;
     }
 
-    h1 { margin: 0 0 6px; font-size: 24px; }
-    .sub { color: #b9c5f5; margin: 0 0 20px; font-size: 14px; }
+    h1 { margin: 0 0 6px; font-size: 30px; }
+    .sub { color: #b9c5f5; margin: 0 0 20px; font-size: 17px; line-height: 1.5; }
 
     .btn-primary {
       border: none;
       border-radius: 10px;
       padding: 12px 26px;
       cursor: pointer;
-      font-size: 15px;
+      font-size: 17px;
       font-weight: 700;
       background: #4f7cff;
       color: #fff;
@@ -52,13 +62,14 @@
     .result-item--actor { border-left-color: #34d399; }
 
     .result-label {
-      font-size: 13px;
+      font-size: 15px;
       color: #9fc0ff;
       flex: 1;
       min-width: 180px;
+      overflow-wrap: anywhere;
     }
 
-    audio { height: 36px; border-radius: 6px; }
+    audio { height: 36px; border-radius: 6px; max-width: 100%; }
 
     .result-footer {
       display: flex;
@@ -76,7 +87,7 @@
       background: #2a355f;
       color: #fff;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 16px;
       font-family: inherit;
       cursor: pointer;
     }
@@ -84,8 +95,22 @@
 
     .result-empty {
       color: #b9c5f5;
-      font-size: 15px;
+      font-size: 17px;
       line-height: 1.5;
+    }
+
+    @media (max-width: 760px) {
+      .layout {
+        padding-inline: 12px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .sub {
+        font-size: 16px;
+      }
     }
   </style>
 </head>
