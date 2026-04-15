@@ -47,17 +47,10 @@ const actorBadgeEl   = document.getElementById('actorBadge');
 const stepCounterEl  = document.getElementById('stepCounter');
 const loadingSection = document.getElementById('loadingSection');
 const loadingText    = document.getElementById('loadingText');
-const partnerSection = document.getElementById('partnerSection');
-const actorSection   = document.getElementById('actorSection');
-const partnerLinesEl = document.getElementById('partnerLines');
-const actorLineEl    = document.getElementById('actorLine');
-const liveTransEl    = document.getElementById('liveTranscript');
-const recStatusEl    = document.getElementById('recStatus');
+const scriptLiveEl   = document.getElementById('scriptLive');
 const skipBtn        = document.getElementById('skipBtn');
-const sceneSummaryMainEl = document.getElementById('sceneSummaryMain');
-const sceneSummaryNextEl = document.getElementById('sceneSummaryNext');
-const sceneTimelineEl = document.getElementById('sceneTimeline');
-const sceneOverviewSection = document.getElementById('sceneOverviewSection');
+const scriptViewportSection = document.getElementById('scriptViewportSection');
+const scriptLaneEl = document.getElementById('scriptLane');
 const rehearsalHeaderEl = document.getElementById('rehearsalHeader');
 const startGate = document.getElementById('startGate');
 const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
@@ -67,107 +60,119 @@ const startGateErrorEl = document.getElementById('startGateError');
 /** Сохраняются в bootstrap, нужны в startRecordingSession (словарь). */
 let rehearsalBlocks = [];
 let rehearsalRole = '';
+let lineProgressRaf = null;
+let durationAudioContext = null;
 
-// ── Утилиты ────────────────────────────────────────────────────────────────
-function renderAnnotations(text) {
-  return escapeHtml(text)
-    .replace(/\[\[(.*?)\]\]/g, '<span class="annotation-inline">[$1]</span>');
+function stopLineProgress() {
+  if (lineProgressRaf !== null) {
+    cancelAnimationFrame(lineProgressRaf);
+    lineProgressRaf = null;
+  }
 }
 
-function summarizeStep(step) {
-  if (!step) return [];
-  if (step.type === 'partner') {
-    return step.lines.map((line) => ({
-      role: line.role,
-      text: extractSpeakable(line.text).slice(0, 140),
-    }));
-  }
-  return [{
-    role: 'Вы',
-    text: extractSpeakable(step.line.text).slice(0, 160),
-  }];
+function setCurrentLineProgress(value) {
+  const v = Math.max(0, Math.min(1, value));
+  const fills = scriptLaneEl?.querySelectorAll('.script-line__progress-fill') || [];
+  fills.forEach((fill) => {
+    const line = fill.closest('.script-line');
+    const i = Number(line?.dataset.index ?? '-1');
+    fill.style.width = i === currentIdx ? `${(v * 100).toFixed(2)}%` : '0%';
+  });
 }
 
-function getUpcomingActorInfo(fromIdx) {
-  for (let i = fromIdx; i < sequence.length; i++) {
-    const step = sequence[i];
-    if (step?.type === 'actor') {
-      return {
-        idx: i,
-        distance: i - currentIdx,
-        text: extractSpeakable(step.line.text),
-      };
-    }
+async function getBlobDurationSeconds(blob) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!durationAudioContext) durationAudioContext = new Ctx();
+    const buffer = await blob.arrayBuffer();
+    const decoded = await durationAudioContext.decodeAudioData(buffer.slice(0));
+    const duration = decoded?.duration;
+    return Number.isFinite(duration) && duration > 0 ? duration : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
-function renderSceneOverview() {
-  if (!sequence.length) {
-    sceneSummaryMainEl.textContent = 'Сцена не загружена';
-    sceneSummaryNextEl.textContent = '';
-    sceneTimelineEl.innerHTML = '';
-    return;
+function stepToViewModel(step) {
+  if (step.type === 'actor') {
+    return {
+      role: step.line.role,
+      type: 'actor',
+      text: extractSpeakable(step.line.text),
+    };
   }
+  const text = step.lines
+    .map((line) => `${line.role}: ${extractSpeakable(line.text)}`)
+    .join(' ');
+  return { role: 'Партнер', type: 'partner', text };
+}
 
-  const currentStep = sequence[currentIdx];
-  const currentLabel = currentStep?.type === 'actor' ? 'Сейчас ваша реплика' : 'Сейчас говорит партнер';
-  sceneSummaryMainEl.textContent = currentLabel;
-
-  const nextActor = currentStep?.type === 'actor'
-    ? getUpcomingActorInfo(currentIdx + 1)
-    : getUpcomingActorInfo(currentIdx);
-
-  if (!nextActor) {
-    sceneSummaryNextEl.textContent = currentStep?.type === 'actor'
-      ? 'После этой реплики сцена завершится.'
-      : 'После текущего фрагмента партнеров ваших реплик больше нет.';
-  } else if (nextActor.distance <= 0) {
-    sceneSummaryNextEl.textContent = `Ваш текст: ${nextActor.text}`;
-  } else if (nextActor.distance === 1) {
-    sceneSummaryNextEl.textContent = `Скоро вам: ${nextActor.text}`;
-  } else {
-    sceneSummaryNextEl.textContent = `До вашей следующей реплики: ${nextActor.distance} шага. Скоро вам: ${nextActor.text}`;
-  }
-
-  const start = Math.max(0, currentIdx - 1);
-  const end = Math.min(sequence.length, currentIdx + 4);
-  sceneTimelineEl.innerHTML = sequence
-    .slice(start, end)
-    .map((step, localIdx) => {
-      const idx = start + localIdx;
-      let stateLabel = 'Дальше';
-      if (idx < currentIdx) stateLabel = 'Уже прошло';
-      if (idx === currentIdx) stateLabel = 'Сейчас';
-      const typeLabel = step.type === 'actor' ? 'Вы' : 'Партнер';
-      const summaryLines = summarizeStep(step);
-      const extraMeta = step.type === 'partner'
-        ? `${step.lines.length} ${step.lines.length === 1 ? 'реплика' : 'реплики'}`
-        : 'ваша реплика';
-      const classes = [
-        'timeline-item',
-        step.type === 'actor' ? 'timeline-item--actor' : 'timeline-item--partner',
-        idx === currentIdx ? 'timeline-item--current' : '',
-        idx < currentIdx ? 'timeline-item--done' : '',
-      ].filter(Boolean).join(' ');
-      return `
-        <div class="${classes}">
-          <div class="timeline-badge">${typeLabel}</div>
-          <div class="timeline-text">
-            <span class="timeline-meta">${stateLabel} · ${extraMeta}</span>
-            <div class="timeline-lines">
-              ${summaryLines.map((line) => `
-                <div class="timeline-line">
-                  <span class="timeline-role">${escapeHtml(line.role || '')}</span>
-                  <span class="timeline-line-text">${escapeHtml(line.text || '...')}</span>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        </div>
-      `;
+function renderScriptLane() {
+  if (!scriptLaneEl) return;
+  scriptLaneEl.innerHTML = sequence
+    .map((step, i) => {
+      const view = stepToViewModel(step);
+      return `<p class="script-line ${view.type}" data-index="${i}">
+        <span class="script-line__role">${escapeHtml(view.role)}</span>
+        <span class="script-line__text">${escapeHtml(view.text)}</span>
+        <span class="script-line__progress">
+          <span class="script-line__progress-track">
+            <span class="script-line__progress-fill"></span>
+          </span>
+        </span>
+      </p>`;
     })
     .join('');
+}
+
+function applyScriptLineClasses(activeIdx) {
+  if (!scriptLaneEl) return;
+  const lines = scriptLaneEl.querySelectorAll('.script-line');
+  lines.forEach((line) => {
+    const i = Number(line.dataset.index);
+    const distance = Math.abs(i - activeIdx);
+    line.classList.toggle('is-current', distance === 0);
+    line.classList.remove('dist-1', 'dist-2', 'dist-3plus');
+    if (distance === 1) line.classList.add('dist-1');
+    else if (distance === 2) line.classList.add('dist-2');
+    else if (distance >= 3) line.classList.add('dist-3plus');
+  });
+}
+
+function scrollScriptToIndex(index, { instant = false } = {}) {
+  const target = scriptLaneEl?.querySelector(`[data-index="${index}"]`);
+  if (!target || !scriptLaneEl) return;
+  const y = target.offsetTop;
+  if (instant) {
+    const prevTransition = scriptLaneEl.style.transition;
+    scriptLaneEl.style.transition = 'none';
+    scriptLaneEl.style.transform = `translateY(${-y}px)`;
+    requestAnimationFrame(() => {
+      scriptLaneEl.style.transition = prevTransition || '';
+    });
+  } else {
+    scriptLaneEl.style.transform = `translateY(${-y}px)`;
+  }
+}
+
+function startLineProgressForCurrent() {
+  stopLineProgress();
+  setCurrentLineProgress(0);
+}
+
+function calcActorLineProgress({
+  score,
+  lenRatio,
+  tail,
+  scoreThreshold,
+  minLenRatio,
+}) {
+  const scorePart = Math.max(0, Math.min(1, score / Math.max(scoreThreshold, 0.0001)));
+  const lenPart = Math.max(0, Math.min(1, lenRatio / Math.max(minLenRatio, 0.0001)));
+  const tailPart = Math.max(0, Math.min(1, tail / Math.max(MIN_TAIL_SCORE, 0.0001)));
+  // Композитный прогресс: смысловое совпадение важнее, длина и хвост стабилизируют оценку.
+  return 0.55 * scorePart + 0.25 * lenPart + 0.2 * tailPart;
 }
 
 function show(el) { el.hidden = false; }
@@ -228,7 +233,7 @@ function onRehearsalVisibilityChange() {
     return;
   }
   const shouldResume =
-    !actorSection.hidden &&
+    sequence[currentIdx]?.type === 'actor' &&
     mediaRecorder &&
     mediaRecorder.state === 'recording' &&
     !turnDone;
@@ -239,9 +244,8 @@ function onRehearsalVisibilityChange() {
 
 function showLoading(msg) {
   hide(rehearsalHeaderEl);
-  hide(sceneOverviewSection);
-  hide(partnerSection);
-  hide(actorSection);
+  hide(scriptViewportSection);
+  if (skipBtn) skipBtn.hidden = true;
   loadingSection.classList.remove('loading-section--countdown');
   loadingText.classList.remove('countdown');
   show(loadingSection);
@@ -385,8 +389,10 @@ async function advanceTo(idx) {
   }
   currentIdx = idx;
   updateStepCounter();
-  show(sceneOverviewSection);
-  renderSceneOverview();
+  show(scriptViewportSection);
+  applyScriptLineClasses(currentIdx);
+  scrollScriptToIndex(currentIdx);
+  startLineProgressForCurrent();
 
   const step = sequence[idx];
   if (step.type === 'partner') {
@@ -398,17 +404,10 @@ async function advanceTo(idx) {
 
 // ── Партнёрский шаг ────────────────────────────────────────────────────────
 async function runPartnerStep(step) {
-  hide(actorSection);
   hide(loadingSection);
-  show(partnerSection);
-
-  partnerLinesEl.innerHTML = step.lines
-    .map(l => `
-      <div class="line-row">
-        <span class="line-role">${escapeHtml(l.role)}</span>
-        <span class="line-text">${renderAnnotations(l.text)}</span>
-      </div>`)
-    .join('');
+  if (skipBtn) skipBtn.hidden = true;
+  setCurrentLineProgress(0);
+  if (scriptLiveEl) scriptLiveEl.textContent = `Партнер говорит: ${stepToViewModel(step).text.slice(0, 180)}`;
 
   const blob = await getPartnerAudio(step.segId);
   if (!blob) {
@@ -417,24 +416,46 @@ async function runPartnerStep(step) {
     return;
   }
 
+  const decodedDurationSec = await getBlobDurationSeconds(blob);
   const url   = URL.createObjectURL(blob);
   const audio = new Audio(url);
-  const next  = () => { URL.revokeObjectURL(url); advanceTo(currentIdx + 1); };
+  const next  = () => {
+    stopLineProgress();
+    setCurrentLineProgress(1);
+    URL.revokeObjectURL(url);
+    advanceTo(currentIdx + 1);
+  };
+  const syncProgress = () => {
+    const duration = Number.isFinite(decodedDurationSec) && decodedDurationSec > 0
+      ? decodedDurationSec
+      : audio.duration;
+    if (!Number.isFinite(duration) || duration <= 0) {
+      lineProgressRaf = requestAnimationFrame(syncProgress);
+      return;
+    }
+    setCurrentLineProgress(audio.currentTime / duration);
+    if (!audio.paused && !audio.ended) {
+      lineProgressRaf = requestAnimationFrame(syncProgress);
+    } else {
+      lineProgressRaf = null;
+    }
+  };
   audio.onended = next;
   audio.onerror = next;
-  audio.play().catch(next);
+  audio.play().then(() => {
+    stopLineProgress();
+    lineProgressRaf = requestAnimationFrame(syncProgress);
+  }).catch(next);
 }
 
 // ── Реплика актёра ─────────────────────────────────────────────────────────
 async function runActorStep(step, seqIdx) {
-  hide(partnerSection);
   hide(loadingSection);
-  show(actorSection);
+  if (skipBtn) skipBtn.hidden = false;
 
   const speakableText = extractSpeakable(step.line.text);
-  actorLineEl.innerHTML = renderAnnotations(step.line.text);
-  liveTransEl.textContent = '';
-  recStatusEl.textContent = 'Слушаем…';
+  if (scriptLiveEl) scriptLiveEl.textContent = '';
+  setCurrentLineProgress(0);
 
   finalSegments = [];
   recordedChunks = [];
@@ -445,13 +466,13 @@ async function runActorStep(step, seqIdx) {
   try {
     const ok = await ensureSmToken();
     if (!ok) {
-      recStatusEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Готово» вручную.';
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Готово» вручную.';
       return;
     }
     await maybeReconnectPersistentIfTokenStale();
   } catch (e) {
     console.error('Failed to refresh Speechmatics token:', e);
-    recStatusEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Готово» вручную.';
+    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Готово» вручную.';
     return;
   }
 
@@ -473,22 +494,44 @@ async function runActorStep(step, seqIdx) {
 
   persistentSession.setHandlers({
     onPartial(text) {
-      liveTransEl.textContent = text;
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${text}`;
+      const hyp = `${finalSegments.join(' ')} ${text}`.trim();
+      if (!hyp) return;
+      const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      setCurrentLineProgress(
+        calcActorLineProgress({
+          score,
+          lenRatio,
+          tail,
+          scoreThreshold,
+          minLenRatio,
+        })
+      );
     },
     onFinal(text) {
       if (turnDone) return;
       finalSegments.push(text.trim());
       const hyp = finalSegments.join(' ');
-      liveTransEl.textContent = hyp;
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${hyp}`;
 
       const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      setCurrentLineProgress(
+        calcActorLineProgress({
+          score,
+          lenRatio,
+          tail,
+          scoreThreshold,
+          minLenRatio,
+        })
+      );
       if (lenRatio >= minLenRatio && score >= scoreThreshold && tail >= MIN_TAIL_SCORE) {
+        setCurrentLineProgress(1);
         finishActorTurn(seqIdx);
       }
     },
     onError(e) {
       console.error('Persistent session error:', e);
-      recStatusEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
     },
   });
   persistentSession.resumeSending();
@@ -504,7 +547,8 @@ function finishActorTurn(seqIdx) {
     currentSkipHandler = null;
   }
 
-  recStatusEl.textContent = '✓ Готово';
+  if (scriptLiveEl) scriptLiveEl.textContent = '✓ Готово';
+  setCurrentLineProgress(1);
 
   persistentSession?.pauseSending();
 
@@ -535,6 +579,7 @@ function finishActorTurn(seqIdx) {
 /** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
 function finishRehearsalAndGoToResult() {
   clearMaxDurationWatch();
+  stopLineProgress();
   persistentSession?.destroy();
   persistentSession = null;
   micStream?.getTracks().forEach((t) => t.stop());
@@ -628,6 +673,8 @@ async function startRecordingSession() {
 
   hide(loadingSection);
   show(rehearsalHeaderEl);
+  show(scriptViewportSection);
+  if (skipBtn) skipBtn.hidden = true;
 
   let startIdx = loadRehearsalCursor();
   if (startIdx >= sequence.length) {
@@ -635,7 +682,9 @@ async function startRecordingSession() {
     saveRehearsalCursor(0);
   }
 
-  renderSceneOverview();
+  renderScriptLane();
+  applyScriptLineClasses(startIdx);
+  scrollScriptToIndex(startIdx, { instant: true });
   startMaxDurationWatch();
   advanceTo(startIdx);
 }

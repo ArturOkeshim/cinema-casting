@@ -49,27 +49,138 @@
       padding: 24px clamp(16px, 4vw, 40px) 60px;
     }
 
-    /* Колонка: шапка → суфлёр → обзор; обзор крутится отдельно, чтобы реплика не уезжала вниз экрана */
     #rehearsalActiveUi {
       display: flex;
       flex-direction: column;
       gap: 16px;
     }
 
-    #rehearsalActiveUi .scene-overview {
-      min-height: 0;
-      overflow-y: auto;
-      max-height: min(52vh, calc(100vh - 15rem));
-      padding-right: 6px;
-      -webkit-overflow-scrolling: touch;
+    .script-viewport {
+      position: relative;
+      overflow: hidden;
+      min-height: clamp(420px, 74vh, 760px);
+      background: transparent;
+      padding: 0;
     }
 
-    /* ── header ── */
+    .script-lane {
+      display: grid;
+      gap: 0;
+      transition: transform 620ms cubic-bezier(0.2, 0.7, 0.2, 1);
+      will-change: transform;
+    }
+
+    .script-line {
+      margin: 0;
+      font-size: clamp(22px, 3.2vw, 44px);
+      line-height: 1.12;
+      font-weight: 500;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      padding: 0 clamp(1.2em, 4vw, 4.8em) 0 0;
+      min-height: 0;
+    }
+
+    .script-line__role {
+      display: block;
+      margin-bottom: 4px;
+      font-size: clamp(12px, 1vw, 15px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .script-line.actor .script-line__role {
+      color: #9ea6b8;
+    }
+
+    .script-line.partner .script-line__role {
+      color: #88a0d9;
+    }
+
+    .script-line__text {
+      display: inline-block;
+      transform-origin: left center;
+      transform: scale(1);
+      transition: transform 320ms ease, color 260ms ease, opacity 260ms ease;
+      will-change: transform;
+      opacity: 1;
+    }
+
+    .script-line.actor .script-line__text {
+      color: #d4d9e6;
+    }
+
+    .script-line.partner .script-line__text {
+      color: #93a8df;
+    }
+
+    .script-line.is-current .script-line__text {
+      transform: scale(1.05);
+      color: #eef4ff;
+    }
+
+    .script-line.actor.is-current .script-line__text {
+      color: #ffffff;
+    }
+
+    .script-line.partner.is-current .script-line__text {
+      color: #adc1f3;
+    }
+
+    .script-line.dist-1 .script-line__text { opacity: 0.44; }
+    .script-line.dist-2 .script-line__text { opacity: 0.26; }
+    .script-line.dist-3plus .script-line__text { opacity: 0.14; }
+
+    .script-line__progress {
+      display: none;
+      margin: 8px auto 0;
+      width: clamp(96px, 16vw, 160px);
+      height: 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 145, 205, 0.65);
+      background: rgba(74, 93, 150, 0.14);
+      overflow: hidden;
+      opacity: 1;
+      line-height: 0;
+      font-size: 0;
+    }
+
+    .script-line.is-current .script-line__progress {
+      display: block;
+    }
+
+    .script-line__progress-track {
+      display: block;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .script-line__progress-fill {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #7aa2ff 0%, #a9c3ff 100%);
+      transition: width 80ms linear;
+    }
+
+    .script-live {
+      margin-top: 10px;
+      color: #90a2d8;
+      font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .rh-header {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 8px;
     }
 
     .actor-badge {
@@ -87,233 +198,19 @@
       color: #6b7db3;
     }
 
-    .scene-overview {
-      margin-bottom: 20px;
-      display: grid;
-      gap: 14px;
-    }
-
-    .scene-summary {
-      display: grid;
-      gap: 10px;
-      padding: 14px 16px;
-      background: #151b31;
-      border: 1px solid #2a355f;
-      border-radius: 12px;
-    }
-
-    .scene-summary-main {
-      font-size: 17px;
-      color: #e7ecff;
-      font-weight: 600;
-    }
-
-    .scene-summary-next {
-      font-size: 15px;
-      color: #b9c5f5;
-      line-height: 1.55;
-      overflow-wrap: anywhere;
-    }
-
-    .scene-timeline {
-      display: grid;
-      gap: 8px;
-    }
-
-    .timeline-item {
-      display: grid;
-      grid-template-columns: 84px 1fr;
-      gap: 10px;
-      align-items: start;
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: #12182f;
-      border: 1px solid #263057;
-      opacity: 0.92;
-    }
-
-    .timeline-item--current {
-      border-color: #4f7cff;
-      background: #162043;
-      opacity: 1;
-    }
-
-    .timeline-item--done {
-      opacity: 0.55;
-    }
-
-    .timeline-item--actor {
-      border-left: 4px solid #34d399;
-    }
-
-    .timeline-item--partner {
-      border-left: 4px solid #4f7cff;
-    }
-
-    .timeline-badge {
-      min-width: 72px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.4px;
-      text-transform: uppercase;
-      color: #9fc0ff;
-    }
-
-    .timeline-item--actor .timeline-badge {
-      color: #7ee7bf;
-    }
-
-    .timeline-text {
-      font-size: 15px;
-      color: #dbe4ff;
-      line-height: 1.55;
-    }
-
-    .timeline-meta {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 12px;
-      color: #7f90c7;
-      text-transform: uppercase;
-      letter-spacing: 0.35px;
-    }
-
-    .timeline-lines {
-      display: grid;
-      gap: 6px;
-    }
-
-    .timeline-line {
-      display: flex;
-      gap: 10px;
-      align-items: baseline;
-      flex-wrap: wrap;
-    }
-
-    .timeline-role {
-      font-size: 12px;
-      font-weight: 700;
-      color: #9fc0ff;
-      min-width: 92px;
-    }
-
-    .timeline-item--actor .timeline-role {
-      color: #7ee7bf;
-    }
-
-    .timeline-line-text {
-      flex: 1;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    /* ── sections ── */
-    .section-label {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      color: #6b7db3;
-      margin-bottom: 12px;
-    }
-
-    /* ── partner ── */
-    .lines-list { display: grid; gap: 10px; }
-
-    .line-row {
-      display: flex;
-      gap: 12px;
-      align-items: baseline;
-      padding: 10px 14px;
-      background: #151b31;
-      border-radius: 10px;
-      border: 1px solid #2a355f;
-    }
-
-    .line-role {
-      font-size: 14px;
-      font-weight: 700;
-      color: #9fc0ff;
-      min-width: 126px;
-      flex-shrink: 0;
-    }
-
-    .line-text {
-      font-size: 19px;
-      color: #c7d0f6;
-      line-height: 1.65;
-      overflow-wrap: anywhere;
-    }
-
-    /* ── actor teleprompter ── */
-    .actor-line {
-      font-size: 38px;
-      line-height: 1.55;
-      color: #f0f4ff;
-      font-weight: 500;
-      padding: 22px 24px;
-      background: #0e1430;
-      border: 1px solid #3a4a80;
-      border-radius: 14px;
-      margin-bottom: 14px;
-      min-height: 80px;
-    }
-
-    .live-transcript {
-      font-size: 19px;
-      color: #4f7cff;
-      min-height: 36px;
-      padding: 10px 14px;
-      border-radius: 8px;
-      background: #0e1020;
-      margin-bottom: 16px;
-    }
-
-    .rec-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 14px;
-      font-size: 15px;
-      color: #9fc0ff;
-    }
-
-    .rec-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #ef4444;
-      animation: blink 1s infinite;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
-    }
-
     .btn-skip {
       border: none;
       border-radius: 10px;
-      padding: 12px 24px;
+      padding: 10px 16px;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       background: #374270;
       color: #e7ecff;
+      margin-left: auto;
     }
 
     .btn-skip:hover { background: #44548f; }
-
-    /* Текущая реплика остаётся под панелью этапов при прокрутке длинного таймлайна */
-    #rehearsalActiveUi #actorSection:not([hidden]) {
-      position: sticky;
-      top: max(var(--rehearsal-actor-sticky-top), env(safe-area-inset-top, 0px));
-      z-index: 50;
-      margin-bottom: 8px;
-      padding-bottom: 4px;
-      background: #0b1020;
-      box-shadow: 0 14px 24px -10px rgba(0, 0, 0, 0.55);
-    }
 
     /* ── loading / error ── */
     .loading-text {
@@ -358,7 +255,7 @@
       color: #4a5a8a;
     }
 
-      /* ── старт пробы ── */
+    /* ── старт пробы ── */
     .start-gate {
       display: grid;
       gap: 18px;
@@ -388,21 +285,8 @@
         padding-inline: 12px;
       }
 
-      .timeline-item {
-        grid-template-columns: 1fr;
-      }
-
-      .timeline-badge {
-        min-width: 0;
-      }
-
-      .line-row {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .line-role {
-        min-width: 0;
+      .btn-skip {
+        margin-left: 0;
       }
     }
   </style>
@@ -420,32 +304,15 @@
       <div id="rehearsalHeader" class="rh-header" hidden>
         <span id="actorBadge" class="actor-badge"></span>
         <span id="stepCounter" class="step-counter"></span>
+        <button id="skipBtn" class="btn-skip" hidden>Готово →</button>
       </div>
-      <section id="actorSection" hidden>
-        <p class="section-label">⏺ Ваша реплика</p>
-        <div id="actorLine" class="actor-line"></div>
-        <div id="liveTranscript" class="live-transcript"></div>
-        <div class="rec-indicator">
-          <span class="rec-dot"></span>
-          <span id="recStatus">Слушаем…</span>
-        </div>
-        <button id="skipBtn" class="btn-skip">Готово →</button>
-      </section>
-      <section id="sceneOverviewSection" class="scene-overview" hidden>
-        <div class="scene-summary">
-          <div id="sceneSummaryMain" class="scene-summary-main"></div>
-          <div id="sceneSummaryNext" class="scene-summary-next"></div>
-        </div>
-        <div id="sceneTimeline" class="scene-timeline"></div>
+      <section id="scriptViewportSection" class="script-viewport" hidden>
+        <div id="scriptLane" class="script-lane"></div>
+        <div id="scriptLive" class="script-live"></div>
       </section>
       <section id="loadingSection" hidden>
         <p id="loadingText" class="loading-text">Загрузка…</p>
       </section>
-      <section id="partnerSection" hidden>
-        <p class="section-label">▶ Партнёр</p>
-        <div id="partnerLines" class="lines-list"></div>
-      </section>
-      
     </div>
   </main>
 
