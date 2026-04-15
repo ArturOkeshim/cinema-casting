@@ -37,6 +37,11 @@
       display: none !important;
     }
 
+    /* Явно прячем секции, даже если их display задан классами ниже. */
+    #rehearsalActiveUi section[hidden] {
+      display: none !important;
+    }
+
     .layout {
       width: 100%;
       min-height: 100vh;
@@ -357,7 +362,7 @@
     .start-gate {
       display: grid;
       gap: 18px;
-      justify-items: start;
+      justify-items: center;
       padding: 32px 0 24px;
     }
     .start-gate .start-hint {
@@ -412,7 +417,7 @@
       <button type="button" id="startRehearsalBtn" class="btn-primary">Начать запись пробы</button>
     </section>
     <div id="rehearsalActiveUi" hidden>
-      <div class="rh-header">
+      <div id="rehearsalHeader" class="rh-header" hidden>
         <span id="actorBadge" class="actor-badge"></span>
         <span id="stepCounter" class="step-counter"></span>
       </div>

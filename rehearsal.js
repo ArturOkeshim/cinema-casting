@@ -58,6 +58,7 @@ const sceneSummaryMainEl = document.getElementById('sceneSummaryMain');
 const sceneSummaryNextEl = document.getElementById('sceneSummaryNext');
 const sceneTimelineEl = document.getElementById('sceneTimeline');
 const sceneOverviewSection = document.getElementById('sceneOverviewSection');
+const rehearsalHeaderEl = document.getElementById('rehearsalHeader');
 const startGate = document.getElementById('startGate');
 const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
 const startRehearsalBtn = document.getElementById('startRehearsalBtn');
@@ -237,6 +238,8 @@ function onRehearsalVisibilityChange() {
 }
 
 function showLoading(msg) {
+  hide(rehearsalHeaderEl);
+  hide(sceneOverviewSection);
   hide(partnerSection);
   hide(actorSection);
   loadingSection.classList.remove('loading-section--countdown');
@@ -382,6 +385,7 @@ async function advanceTo(idx) {
   }
   currentIdx = idx;
   updateStepCounter();
+  show(sceneOverviewSection);
   renderSceneOverview();
 
   const step = sequence[idx];
@@ -623,7 +627,7 @@ async function startRecordingSession() {
   await showStartCountdown();
 
   hide(loadingSection);
-  show(sceneOverviewSection);
+  show(rehearsalHeaderEl);
 
   let startIdx = loadRehearsalCursor();
   if (startIdx >= sequence.length) {
