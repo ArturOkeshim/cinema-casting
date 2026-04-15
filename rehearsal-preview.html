@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinema Casting - Preview Rehearsal UX</title>
+  <style>
+    :root {
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      color-scheme: dark;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
+      color: #e7ecff;
+    }
+
+    .layout {
+      width: 100%;
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 40px) 34px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: #b9c5f5;
+      font-size: 14px;
+    }
+
+    .toolbar strong {
+      color: #e7ecff;
+    }
+
+    .btn {
+      border: 1px solid #44548f;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      color: #e7ecff;
+      background: #1a2240;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      border-color: #4f7cff;
+      background: #162043;
+    }
+
+    .scene {
+      min-height: 0;
+      display: grid;
+      align-content: center;
+      gap: 10px;
+    }
+
+    .script-window {
+      --row-gap: 18px;
+      --row-height: clamp(120px, 18vh, 190px);
+      --lane-step: calc(var(--row-height) + var(--row-gap));
+      position: relative;
+      min-height: clamp(420px, 72vh, 720px);
+      overflow: hidden;
+      padding: 10px 2px;
+    }
+
+    .lane {
+      display: grid;
+      gap: var(--row-gap);
+      transition: transform 640ms cubic-bezier(0.2, 0.7, 0.2, 1);
+      will-change: transform;
+    }
+
+    .lane.shift-up {
+      transform: translateY(calc(-1 * var(--lane-step)));
+    }
+
+    .lane.shift-down {
+      transform: translateY(var(--lane-step));
+    }
+
+    .script-window::before,
+    .script-window::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 20%;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .script-window::before {
+      top: 0;
+      background: linear-gradient(180deg, rgba(11, 16, 32, 0.98) 0%, rgba(11, 16, 32, 0) 100%);
+    }
+
+    .script-window::after {
+      bottom: 0;
+      background: linear-gradient(0deg, rgba(11, 16, 32, 0.98) 0%, rgba(11, 16, 32, 0) 100%);
+    }
+
+    .line-item {
+      display: grid;
+      align-content: center;
+      gap: 8px;
+      min-height: var(--row-height);
+      padding: 8px 6px;
+      transition: opacity 420ms ease, transform 420ms ease, filter 420ms ease;
+    }
+
+    .line-item.prev {
+      opacity: 1;
+      transform: translateY(-8px) scale(0.94);
+      filter: none;
+    }
+
+    .line-item.current {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: none;
+    }
+
+    .line-item.next {
+      opacity: 1;
+      transform: translateY(6px) scale(0.97);
+    }
+
+    .line-item.far {
+      opacity: 1;
+      transform: scale(0.92);
+      filter: none;
+    }
+
+    .role {
+      font-size: clamp(14px, 1.4vw, 18px);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .line-item.actor .role {
+      color: #7ee7bf;
+    }
+
+    .line-item.partner .role {
+      color: #9fc0ff;
+    }
+
+    .text {
+      margin: 0;
+      font-size: clamp(30px, 4.4vw, 56px);
+      line-height: 1.2;
+      font-weight: 500;
+      color: #eafff5;
+      overflow-wrap: anywhere;
+    }
+
+    .line-item.current .text {
+      line-height: 1.2;
+      font-weight: 500;
+    }
+
+    .line-item.current .role {
+      font-size: clamp(16px, 1.7vw, 22px);
+    }
+
+    .live-debug {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #7e93d6;
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4f7cff;
+      animation: pulse 1.1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+
+    .live-text {
+      color: #9fb2ea;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <div class="toolbar">
+      <strong>Тестовый макет UX:</strong>
+      текущий блок + следующий блок + плавная смена вверх
+      <button class="btn" id="prevBtn" type="button">← Назад</button>
+      <button class="btn" id="nextBtn" type="button">Дальше →</button>
+      <button class="btn" id="autoBtn" type="button">Авто: Вкл</button>
+    </div>
+
+    <section class="scene">
+      <div class="script-window">
+        <div id="scriptLane" class="lane"></div>
+      </div>
+    </section>
+
+    <div class="live-debug">
+      <span class="dot"></span>
+      <span>Live transcript:</span>
+      <span id="liveText" class="live-text"></span>
+    </div>
+  </main>
+
+  <script>
+    const scene = [
+      { role: "Партнер", text: "Ты снова опоздал на встречу.", type: "partner" },
+      { role: "Алексей", text: "Я не опоздал. Я просто не мог уйти раньше.", type: "actor" },
+      { role: "Партнер", text: "Ты всегда так говоришь, когда не хочешь объясняться.", type: "partner" },
+      { role: "Алексей", text: "Хорошо. Мне было страшно сюда идти.", type: "actor" },
+      { role: "Партнер", text: "Почему?", type: "partner" },
+      { role: "Алексей", text: "Потому что если я скажу правду, все изменится.", type: "actor" },
+    ];
+
+    let idx = 0;
+    let auto = true;
+    let timer = null;
+    let isAnimating = false;
+
+    const scriptLane = document.getElementById("scriptLane");
+    const liveText = document.getElementById("liveText");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const autoBtn = document.getElementById("autoBtn");
+
+    function itemMarkup(item, i) {
+      return `
+        <article class="line-item ${item.type}" data-index="${i}">
+          <div class="role">${item.role}</div>
+          <p class="text">${item.text}</p>
+        </article>
+      `;
+    }
+
+    function updateLiveText() {
+      liveText.textContent = `${scene[idx].role}: ${scene[idx].text.slice(0, 78)}`;
+    }
+
+    function clampIdx(value) {
+      if (value < 0) return 0;
+      if (value >= scene.length) return scene.length - 1;
+      return value;
+    }
+
+    function classifyItems(activeIdx = idx) {
+      const items = scriptLane.querySelectorAll(".line-item");
+      items.forEach((el) => {
+        const i = Number(el.dataset.index);
+        const dist = i - activeIdx;
+        el.classList.remove("prev", "current", "next", "far");
+        if (dist === -1) el.classList.add("prev");
+        else if (dist === 0) el.classList.add("current");
+        else if (dist === 1) el.classList.add("next");
+        else el.classList.add("far");
+      });
+    }
+
+    function scrollToIndex(targetIdx, { instant = false } = {}) {
+      const firstItem = scriptLane.querySelector(".line-item");
+      const laneStyle = getComputedStyle(scriptLane);
+      const rowGap = parseFloat(laneStyle.rowGap || "0") || 0;
+      const rowHeight = firstItem ? firstItem.getBoundingClientRect().height : 0;
+      const step = rowHeight + rowGap;
+      if (!Number.isFinite(step) || step <= 0) return;
+      if (instant) {
+        const oldTransition = scriptLane.style.transition;
+        scriptLane.style.transition = "none";
+        scriptLane.style.transform = `translateY(${-targetIdx * step}px)`;
+        requestAnimationFrame(() => {
+          scriptLane.style.transition = oldTransition || "";
+        });
+      } else {
+        scriptLane.style.transform = `translateY(${-targetIdx * step}px)`;
+      }
+    }
+
+    function renderLane() {
+      scriptLane.innerHTML = scene.map((item, i) => itemMarkup(item, i)).join("");
+      classifyItems();
+      scrollToIndex(idx, { instant: true });
+      updateLiveText();
+    }
+
+    function go(step) {
+      if (isAnimating) return;
+      const nextIdx = clampIdx(idx + step);
+      if (nextIdx === idx) return;
+      isAnimating = true;
+      // Переключаем визуальные роли сразу: масштаб/затухание идет одновременно с движением ленты.
+      classifyItems(nextIdx);
+      requestAnimationFrame(() => {
+        scrollToIndex(nextIdx);
+      });
+
+      const onDone = () => {
+        scriptLane.removeEventListener("transitionend", onDone);
+        idx = nextIdx;
+        classifyItems(idx);
+        updateLiveText();
+        isAnimating = false;
+      };
+
+      scriptLane.addEventListener("transitionend", onDone, { once: true });
+    }
+
+    function tick() {
+      go(1);
+      if (auto) timer = setTimeout(tick, 2400);
+    }
+
+    function syncAutoLabel() {
+      autoBtn.textContent = auto ? "Авто: Вкл" : "Авто: Выкл";
+    }
+
+    prevBtn.addEventListener("click", () => {
+      clearTimeout(timer);
+      go(-1);
+      if (auto) timer = setTimeout(tick, 2400);
+    });
+
+    nextBtn.addEventListener("click", () => {
+      clearTimeout(timer);
+      go(1);
+      if (auto) timer = setTimeout(tick, 2400);
+    });
+
+    autoBtn.addEventListener("click", () => {
+      auto = !auto;
+      syncAutoLabel();
+      clearTimeout(timer);
+      if (auto) timer = setTimeout(tick, 1000);
+    });
+
+    renderLane();
+    syncAutoLabel();
+    timer = setTimeout(tick, 2400);
+  </script>
+</body>
+</html>

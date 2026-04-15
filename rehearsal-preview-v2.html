@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rehearsal Preview V2</title>
+  <style>
+    :root {
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      color-scheme: dark;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 700px at 20% -10%, #1d2a56 0%, transparent 55%),
+        radial-gradient(900px 700px at 110% 0%, #1f3f72 0%, transparent 45%),
+        #0b1020;
+      color: #e7ecff;
+    }
+
+    .layout {
+      width: 100%;
+      min-height: 100vh;
+      padding: 24px clamp(16px, 4vw, 40px) 28px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: #b9c5f5;
+    }
+
+    .btn {
+      border: 1px solid #44548f;
+      border-radius: 10px;
+      padding: 8px 14px;
+      background: #1a2240;
+      color: #e7ecff;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      border-color: #4f7cff;
+      background: #162043;
+    }
+
+    .viewport {
+      position: relative;
+      overflow: hidden;
+      min-height: clamp(100px, 74vh, 760px);
+      border-radius: 0;
+      border: none;
+      background: transparent;
+      padding: 0;
+    }
+
+    .lane {
+      display: grid;
+      gap: 0px;
+      transition: transform 620ms cubic-bezier(0.2, 0.7, 0.2, 1);
+      will-change: transform;
+    }
+
+    .line {
+      margin: 0;
+      font-size: clamp(22px, 3.2vw, 44px);
+      line-height: 1.04;
+      font-weight: 500;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      /* Резервируем место под "увеличение", чтобы соседние строки не скакали. */
+      padding: 0 0.9em 0 0;
+      min-height: 0;
+    }
+
+    .line-text {
+      display: inline-block;
+      color: #8ea1d8;
+      transform-origin: left center;
+      transform: scale(1);
+      transition: transform 320ms ease, color 260ms ease, opacity 260ms ease;
+      will-change: transform;
+      opacity: 1;
+    }
+
+    .line.actor .line-text {
+      color: #d4d9e6;
+    }
+
+    .line.partner .line-text {
+      color: #93a8df;
+    }
+
+    .line.is-current .line-text {
+      transform: scale(1.05);
+      color: #eef4ff;
+    }
+
+    .line.actor.is-current .line-text {
+      color: #ffffff;
+    }
+
+    .line.partner.is-current .line-text {
+      color: #adc1f3;
+    }
+
+    /* Чем дальше реплика от текущей, тем сильнее приглушение */
+    .line.dist-1 .line-text { opacity: 0.44; }
+    .line.dist-2 .line-text { opacity: 0.26; }
+    .line.dist-3plus .line-text { opacity: 0.14; }
+
+    .line-progress {
+      display: none;
+      margin: 2px auto 0;
+      width: clamp(96px, 16vw, 160px);
+      height: 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 145, 205, 0.65);
+      background: rgba(74, 93, 150, 0.14);
+      overflow: hidden;
+      opacity: 1;
+      transition: opacity 180ms ease;
+      line-height: 0;
+      font-size: 0;
+    }
+
+    .progress-track {
+      display: block;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .progress-fill {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #7aa2ff 0%, #a9c3ff 100%);
+      transition: width 80ms linear;
+    }
+
+    .line.is-current .line-progress {
+      display: block;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: #90a2d8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main class="layout">
+    <div class="toolbar">
+      <span>V2: чистая прокрутка по одной реплике</span>
+      <button id="prevBtn" class="btn" type="button">← Назад</button>
+      <button id="nextBtn" class="btn" type="button">Дальше →</button>
+      <button id="autoBtn" class="btn" type="button">Авто: Выкл</button>
+    </div>
+
+    <section class="viewport">
+      <div id="lane" class="lane"></div>
+    </section>
+
+    <div id="meta" class="meta"></div>
+  </main>
+
+  <script>
+    const lines = [
+      "ПАРТНЕР: Ты снова опоздал, и дело даже не во времени — ты входишь в комнату так, будто заранее решил, что разговора не получится.",
+      "АЛЕКСЕЙ: Я не искал повода уйти от разговора, я просто стоял у двери и пытался собраться, потому что понимал: после этих слов назад уже не вернуться.",
+      "ПАРТНЕР: Ты каждый раз начинаешь издалека, и это звучит красиво, но в итоге я слышу только тишину между фразами, а не то, что ты на самом деле хочешь сказать.",
+      "АЛЕКСЕЙ: Хорошо, скажу прямо: мне было страшно прийти, потому что я слишком долго делал вид, что всё под контролем, и теперь не знаю, как сказать правду без потерь.",
+      "ПАРТНЕР: Тогда не защищайся, не оправдывайся, не прячься за словами — просто скажи одну вещь ясно, чтобы я больше не угадывала по твоему молчанию.",
+      "АЛЕКСЕЙ: Правда в том, что я все это время выбирал удобство вместо честности, и если сегодня наконец скажу всё как есть, наша жизнь после этого изменится окончательно."
+    ];
+
+    const lane = document.getElementById("lane");
+    const meta = document.getElementById("meta");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const autoBtn = document.getElementById("autoBtn");
+
+    let currentIndex = 0;
+    let isAnimating = false;
+    let auto = false;
+    let progressRaf = null;
+    let progressStartedAt = 0;
+    let progressDurationMs = 0;
+
+    function estimateDurationMs(text) {
+      // Простая оценка: длиннее фраза -> длиннее шкала.
+      const ms = text.length * 32;
+      return Math.max(1800, Math.min(7000, ms));
+    }
+
+    function stopProgress() {
+      if (progressRaf !== null) {
+        cancelAnimationFrame(progressRaf);
+        progressRaf = null;
+      }
+    }
+
+    function setProgress(value) {
+      const v = Math.max(0, Math.min(1, value));
+      const allFills = lane.querySelectorAll(".line-progress .progress-fill");
+      allFills.forEach((fill) => {
+        const line = fill.closest(".line");
+        const i = Number(line?.dataset.index ?? "-1");
+        fill.style.width = i === currentIndex ? `${(v * 100).toFixed(2)}%` : "0%";
+      });
+    }
+
+    function startProgressForCurrent() {
+      stopProgress();
+      const text = lines[currentIndex] || "";
+      progressDurationMs = estimateDurationMs(text);
+      progressStartedAt = performance.now();
+      setProgress(0);
+
+      const tick = (now) => {
+        const elapsed = now - progressStartedAt;
+        const p = elapsed / progressDurationMs;
+        setProgress(p);
+
+        if (p >= 1) {
+          progressRaf = null;
+          if (auto && currentIndex < lines.length - 1 && !isAnimating) {
+            go(1);
+          }
+          return;
+        }
+        progressRaf = requestAnimationFrame(tick);
+      };
+
+      progressRaf = requestAnimationFrame(tick);
+    }
+
+    function renderLines() {
+      lane.innerHTML = lines
+        .map((text, i) => {
+          const typeClass = text.startsWith("АЛЕКСЕЙ:") ? "actor" : "partner";
+          return `<p class="line ${typeClass}" data-index="${i}">
+            <span class="line-text">${text}</span>
+            <span class="line-progress">
+              <span class="progress-track">
+                <span class="progress-fill"></span>
+              </span>
+            </span>
+          </p>`;
+        })
+        .join("");
+    }
+
+    function updateMeta() {
+      meta.textContent = `index=${currentIndex} | animating=${isAnimating} | total=${lines.length}`;
+    }
+
+    function applyCurrentClass(index) {
+      const all = lane.querySelectorAll(".line");
+      all.forEach((el) => {
+        const i = Number(el.dataset.index);
+        const distance = Math.abs(i - index);
+        el.classList.toggle("is-current", distance === 0);
+        el.classList.remove("dist-1", "dist-2", "dist-3plus");
+        if (distance === 1) el.classList.add("dist-1");
+        else if (distance === 2) el.classList.add("dist-2");
+        else if (distance >= 3) el.classList.add("dist-3plus");
+      });
+    }
+
+    function scrollToIndex(index, { instant = false } = {}) {
+      const targetEl = lane.querySelector(`[data-index="${index}"]`);
+      if (!targetEl) return;
+      const targetY = targetEl.offsetTop;
+      if (instant) {
+        const prevTransition = lane.style.transition;
+        lane.style.transition = "none";
+        lane.style.transform = `translateY(${-targetY}px)`;
+        requestAnimationFrame(() => {
+          lane.style.transition = prevTransition || "";
+        });
+      } else {
+        lane.style.transform = `translateY(${-targetY}px)`;
+      }
+    }
+
+    function go(step) {
+      if (isAnimating) return;
+      const next = Math.max(0, Math.min(lines.length - 1, currentIndex + step));
+      if (next === currentIndex) return;
+      isAnimating = true;
+      stopProgress();
+      applyCurrentClass(next);
+      updateMeta();
+      scrollToIndex(next);
+
+      const onDone = () => {
+        lane.removeEventListener("transitionend", onDone);
+        currentIndex = next;
+        isAnimating = false;
+        updateMeta();
+        startProgressForCurrent();
+      };
+      lane.addEventListener("transitionend", onDone, { once: true });
+    }
+
+    function syncAutoLabel() {
+      autoBtn.textContent = auto ? "Авто: Вкл" : "Авто: Выкл";
+    }
+
+    prevBtn.addEventListener("click", () => go(-1));
+    nextBtn.addEventListener("click", () => go(1));
+    autoBtn.addEventListener("click", () => {
+      auto = !auto;
+      syncAutoLabel();
+      if (auto) {
+        // Если шкала уже заполнена, сразу переходим.
+        const currentFill = lane.querySelector(`.line[data-index="${currentIndex}"] .progress-fill`);
+        const width = parseFloat(currentFill?.style.width || "0");
+        if (width >= 99.9 && currentIndex < lines.length - 1 && !isAnimating) {
+          go(1);
+        }
+      }
+    });
+
+    renderLines();
+    applyCurrentClass(currentIndex);
+    scrollToIndex(currentIndex, { instant: true });
+    updateMeta();
+    syncAutoLabel();
+    startProgressForCurrent();
+  </script>
+</body>
+</html>
