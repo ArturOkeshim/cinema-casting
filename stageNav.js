@@ -105,7 +105,8 @@ export function initStageNav(current, opts = {}) {
         cursor: not-allowed;
       }
       .stage-nav-save,
-      .stage-nav-load {
+      .stage-nav-load,
+      .stage-nav-help {
         border: 1px solid #3d4d8a;
         border-radius: 999px;
         padding: 7px 14px;
@@ -118,15 +119,87 @@ export function initStageNav(current, opts = {}) {
         flex-shrink: 0;
       }
       .stage-nav-save:hover,
-      .stage-nav-load:hover {
+      .stage-nav-load:hover,
+      .stage-nav-help:hover {
         background: rgba(79, 124, 255, 0.22);
         border-color: #4f7cff;
         color: #fff;
       }
       .stage-nav-save:disabled,
-      .stage-nav-load:disabled {
+      .stage-nav-load:disabled,
+      .stage-nav-help:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+      .stage-nav-help {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        font-weight: 800;
+      }
+      .stage-nav-help-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 2100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(2, 8, 24, 0.72);
+      }
+      .stage-nav-help-modal.is-open {
+        display: flex;
+      }
+      .stage-nav-help-modal__panel {
+        width: min(520px, 100%);
+        border-radius: 14px;
+        border: 1px solid #2a355f;
+        background: #151b31;
+        color: #e7ecff;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+      }
+      .stage-nav-help-modal__header {
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid #2a355f;
+      }
+      .stage-nav-help-modal__title {
+        margin: 0;
+        font-size: 18px;
+      }
+      .stage-nav-help-modal__close {
+        border: 1px solid #3d4d8a;
+        border-radius: 8px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        background: #1a2240;
+        color: #e7ecff;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .stage-nav-help-modal__content {
+        padding: 14px 16px 16px;
+        color: #c7d0f6;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .stage-nav-help-modal__content p {
+        margin: 0 0 10px;
+      }
+      .stage-nav-help-modal__content p:last-child {
+        margin-bottom: 0;
+      }
+      .stage-nav-help-modal__content strong {
+        color: #e7ecff;
       }
       .stage-nav-mobile {
         display: none;
@@ -188,7 +261,8 @@ export function initStageNav(current, opts = {}) {
         }
         .stage-nav-save,
         .stage-nav-load,
-        .stage-nav-reset {
+        .stage-nav-reset,
+        .stage-nav-help {
           width: 32px;
           height: 32px;
           padding: 0;
@@ -212,6 +286,9 @@ export function initStageNav(current, opts = {}) {
         }
         .stage-nav-reset::before {
           content: "🗑";
+        }
+        .stage-nav-help {
+          font-size: 16px;
         }
       }
     `;
@@ -386,13 +463,65 @@ export function initStageNav(current, opts = {}) {
     }
   });
 
-  
+  const helpBtn = document.createElement('button');
+  helpBtn.type = 'button';
+  helpBtn.className = 'stage-nav-help';
+  helpBtn.textContent = '?';
+  helpBtn.setAttribute('aria-label', 'Пояснение по кнопкам');
+  helpBtn.title = 'Как работают кнопки сохранения и загрузки';
+
+  const helpModal = document.createElement('div');
+  helpModal.className = 'stage-nav-help-modal';
+  helpModal.setAttribute('aria-hidden', 'true');
+  helpModal.innerHTML = `
+    <div class="stage-nav-help-modal__panel" role="dialog" aria-modal="true" aria-labelledby="stageNavHelpTitle">
+      <div class="stage-nav-help-modal__header">
+        <h2 id="stageNavHelpTitle" class="stage-nav-help-modal__title">Как пользоваться кнопками</h2>
+        <button type="button" class="stage-nav-help-modal__close" aria-label="Закрыть окно">×</button>
+      </div>
+      <div class="stage-nav-help-modal__content">
+        <p><strong>Сохранить пробу:</strong> сохраняет текущие данные пробы в файл, чтобы продолжить позже на этом или другом устройстве.</p>
+        <p><strong>Загрузить пробу:</strong> загружает ранее сохранённый файл пробы и заменяет им текущие данные.</p>
+        <p><strong>Сбросить всё:</strong> удаляет текущие данные пробы. Используйте, если хотите начать заново.</p>
+      </div>
+    </div>
+  `;
+
+  const closeHelpModal = () => {
+    helpModal.classList.remove('is-open');
+    helpModal.setAttribute('aria-hidden', 'true');
+  };
+
+  helpBtn.addEventListener('click', () => {
+    helpModal.classList.add('is-open');
+    helpModal.setAttribute('aria-hidden', 'false');
+  });
+
+  const helpModalCloseBtn = helpModal.querySelector('.stage-nav-help-modal__close');
+  if (helpModalCloseBtn) {
+    helpModalCloseBtn.addEventListener('click', closeHelpModal);
+  }
+
+  helpModal.addEventListener('click', (event) => {
+    if (event.target === helpModal) {
+      closeHelpModal();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && helpModal.classList.contains('is-open')) {
+      closeHelpModal();
+    }
+  });
+
 
   row.appendChild(inner);
+  row.appendChild(helpBtn);
   row.appendChild(saveBtn);
   row.appendChild(loadBtn);
   row.appendChild(resetBtn);
   nav.appendChild(row);
+  nav.appendChild(helpModal);
 
   nav.classList.add('stage-nav--full')
 
