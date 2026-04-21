@@ -212,6 +212,20 @@
 
     .btn-skip:hover { background: #44548f; }
 
+    .script-line__actions {
+      display: none;
+      margin-top: 10px;
+    }
+
+    .script-line.actor.is-current .script-line__actions {
+      display: flex;
+      justify-content: center;
+    }
+
+    .script-line .btn-skip {
+      margin-left: 0;
+    }
+
     /* ── loading / error ── */
     .loading-text {
       color: #b9c5f5;
@@ -262,6 +276,9 @@
       justify-items: center;
       padding: 32px 0 24px;
     }
+    .start-gate[hidden] {
+      display: none !important;
+    }
     .start-gate .start-hint {
       margin: 0;
       color: #b9c5f5;
@@ -304,12 +321,12 @@
       <div id="rehearsalHeader" class="rh-header" hidden>
         <span id="actorBadge" class="actor-badge"></span>
         <span id="stepCounter" class="step-counter"></span>
-        <button id="skipBtn" class="btn-skip" hidden>Готово →</button>
       </div>
       <section id="scriptViewportSection" class="script-viewport" hidden>
         <div id="scriptLane" class="script-lane"></div>
         <div id="scriptLive" class="script-live"></div>
       </section>
+      <button id="skipBtn" class="btn-skip" hidden>Дальше →</button>
       <section id="loadingSection" hidden>
         <p id="loadingText" class="loading-text">Загрузка…</p>
       </section>

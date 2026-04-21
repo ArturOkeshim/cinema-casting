@@ -121,9 +121,20 @@ function renderScriptLane() {
             <span class="script-line__progress-fill"></span>
           </span>
         </span>
+        ${view.type === 'actor' ? '<span class="script-line__actions"></span>' : ''}
       </p>`;
     })
     .join('');
+}
+
+function mountSkipButtonToActorLine(index) {
+  if (!skipBtn || !scriptLaneEl) return;
+  const host = scriptLaneEl.querySelector(`.script-line.actor[data-index="${index}"] .script-line__actions`);
+  if (!host) {
+    skipBtn.hidden = true;
+    return;
+  }
+  host.appendChild(skipBtn);
 }
 
 function applyScriptLineClasses(activeIdx) {
@@ -451,6 +462,7 @@ async function runPartnerStep(step) {
 // ── Реплика актёра ─────────────────────────────────────────────────────────
 async function runActorStep(step, seqIdx) {
   hide(loadingSection);
+  mountSkipButtonToActorLine(seqIdx);
   if (skipBtn) skipBtn.hidden = false;
 
   const speakableText = extractSpeakable(step.line.text);
