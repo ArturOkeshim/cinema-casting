@@ -11,7 +11,7 @@ load_dotenv()
 
 # Production: keep BIND_HOST=127.0.0.1 and put nginx in front.
 HOST = os.getenv("BIND_HOST", "127.0.0.1")
-PORT = int(os.getenv("PORT", "8000"))
+PORT = int(os.getenv("PORT", "5500"))
 
 # Статика раздаётся из корня проекта — явно не отдаём секреты и служебные каталоги.
 _FORBIDDEN_PATH_SEGMENTS = frozenset({
@@ -60,11 +60,6 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path == "/api/config":
-            self._send_json(200, {
-                "speechmatics_key": os.getenv("SPEECHMATICS_API_KEY", ""),
-            })
-            return
         if self.path == "/api/sm-token":
             api_key = os.getenv("SPEECHMATICS_API_KEY", "").strip()
             if not api_key:

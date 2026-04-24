@@ -201,6 +201,123 @@ export function initStageNav(current, opts = {}) {
       .stage-nav-help-modal__content strong {
         color: #e7ecff;
       }
+      .auth-modal-root[hidden] {
+        display: none !important;
+      }
+      .auth-modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(2, 8, 24, 0.72);
+      }
+      .auth-modal-panel {
+        width: min(460px, 100%);
+        border-radius: 14px;
+        border: 1px solid #2a355f;
+        background: #151b31;
+        color: #e7ecff;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+        padding: 16px;
+      }
+      .auth-modal-header {
+        margin: 0 0 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .auth-modal-header h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .auth-close-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 1px solid #3d4d8a;
+        border-radius: 8px;
+        width: 24px;
+        height: 24px;
+        background: #1a2240;
+        color: #e7ecff;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .auth-label {
+        display: block;
+        margin: 0 0 6px;
+        font-size: 13px;
+        color: #c7d0f6;
+      }
+      .auth-input {
+        width: 100%;
+        margin: 0 0 10px;
+        border: 1px solid #3d4d8a;
+        border-radius: 10px;
+        background: #0f1633;
+        color: #e7ecff;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      .auth-submit-btn {
+        border: 1px solid #4f7cff;
+        border-radius: 10px;
+        background: #4f7cff;
+        color: #fff;
+        padding: 10px 14px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .auth-register-hint {
+        margin: 12px 0 6px;
+        color: #c7d0f6;
+        font-size: 13px;
+      }
+      .auth-register-btn {
+        border: 1px solid #3d4d8a;
+        border-radius: 10px;
+        background: rgba(79, 124, 255, 0.12);
+        color: #c7d4ff;
+        padding: 9px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .auth-error[hidden] {
+        display: none !important;
+      }
+      .auth-error {
+        margin: 10px 0 0;
+        color: #fca5a5;
+        font-size: 13px;
+      }
+      .stage-nav-login {
+        border: 1px solid #16a34a;
+        border-radius: 999px;
+        padding: 7px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        background: #16a34a;
+        color: #ffffff;
+        flex-shrink: 0;
+        max-width: 260px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .stage-nav-login:hover {
+        background: #15803d;
+        border-color: #15803d;
+        color: #fff;
+      }
       .stage-nav-mobile {
         display: none;
       }
@@ -261,6 +378,7 @@ export function initStageNav(current, opts = {}) {
         }
         .stage-nav-save,
         .stage-nav-load,
+        .stage-nav-login,
         .stage-nav-reset,
         .stage-nav-help {
           width: 32px;
@@ -275,6 +393,7 @@ export function initStageNav(current, opts = {}) {
         }
         .stage-nav-save::before,
         .stage-nav-load::before,
+        .stage-nav-login::before,
         .stage-nav-reset::before {
           font-size: 16px;
         }
@@ -283,6 +402,9 @@ export function initStageNav(current, opts = {}) {
         }
         .stage-nav-load::before {
           content: "📂";
+        }
+        .stage-nav-login::before {
+          content: "👤";
         }
         .stage-nav-reset::before {
           content: "🗑";
@@ -354,6 +476,7 @@ export function initStageNav(current, opts = {}) {
 
     inner.appendChild(a);
   }
+  
 
   /*
   Создаем мобильную версию навигации
@@ -400,6 +523,278 @@ export function initStageNav(current, opts = {}) {
   mobileNav.appendChild(nextBtn)
   row.appendChild(mobileNav);
 
+  /*
+  Здесь создадим кнопки для логина
+  */
+  function createAuthModal() {
+    const authModal = document.createElement('div');
+    authModal.className = 'auth-modal-root';
+    authModal.hidden = true;
+    authModal.innerHTML =
+    ` <div class="auth-modal-overlay">
+        <div class="auth-modal-panel">
+          <header class="auth-modal-header">
+            <h1 class="auth-modal-title">Войти</h1>
+            <button type="button" class="auth-close-btn" aria-label="Закрыть">×</button>
+          </header>
+          <label class="auth-label" for="authEmailInput">Email</label>
+          <input id="authEmailInput" type="email" class="auth-input" autocomplete="email" />
+          <label class="auth-label" for="authPasswordInput">Пароль</label>
+          <input id="authPasswordInput" type="password" class="auth-input" autocomplete="current-password" />
+          <button type="button" class="auth-submit-btn">Войти</button>
+          <p class="auth-register-hint">Нет аккаунта?</p>
+          <button type="button" class="auth-register-btn">Перейти к регистрации</button>
+          <p class="auth-error" hidden></p>
+        </div>
+      </div>
+    `;
+
+    const overlay = authModal.querySelector('.auth-modal-overlay');
+    const closeBtn = authModal.querySelector('.auth-close-btn');
+    const closeAuthModal = () => {
+      authModal.hidden = true;
+    };
+
+    closeBtn?.addEventListener('click', closeAuthModal);
+    overlay?.addEventListener('click', (event) => {
+      if (event.target === overlay) closeAuthModal();
+    });
+
+    return authModal;
+  }
+  
+  const authModal = createAuthModal();
+  const authTitleEl = authModal.querySelector('.auth-modal-title');
+  const authEmailInput = authModal.querySelector('#authEmailInput');
+  const authPasswordInput = authModal.querySelector('#authPasswordInput');
+  const authSubmitBtn = authModal.querySelector('.auth-submit-btn');
+  const authHintEl = authModal.querySelector('.auth-register-hint');
+  const authRegisterBtn = authModal.querySelector('.auth-register-btn');
+  const authErrorEl = authModal.querySelector('.auth-error');
+  let authMode = 'login';
+  const setAuthMode = (mode) => {
+    authMode = mode === 'register' ? 'register' : 'login';
+    const isRegister = authMode === 'register';
+    if (authTitleEl) authTitleEl.textContent = isRegister ? 'Регистрация' : 'Войти';
+    if (authSubmitBtn) authSubmitBtn.textContent = isRegister ? 'Зарегистрироваться' : 'Войти';
+    if (authHintEl) authHintEl.textContent = isRegister ? 'Уже есть аккаунт?' : 'Нет аккаунта?';
+    if (authRegisterBtn) authRegisterBtn.textContent = isRegister ? 'Перейти ко входу' : 'Перейти к регистрации';
+    if (authErrorEl) {
+      authErrorEl.hidden = true;
+      authErrorEl.textContent = '';
+    }
+  };
+  const openAuthModal = () => {
+    setAuthMode('login');
+    if (authErrorEl) {
+      authErrorEl.hidden = true;
+      authErrorEl.textContent = '';
+    }
+    authModal.hidden = false;
+    authEmailInput?.focus();
+  };
+  const closeAuthModal = () => {
+    authModal.hidden = true;
+  };
+
+  const AUTH_TOKEN_KEY = 'cc_auth_token';
+  const AUTH_EMAIL_KEY = 'cc_auth_email';
+  const AUTH_API_BASE_STORAGE_KEY = 'AUTH_API_BASE';
+  const DEFAULT_API_BASE = 'http://127.0.0.1:8000';
+  const storedApiBase = String(window.localStorage.getItem(AUTH_API_BASE_STORAGE_KEY) || '').trim();
+  const AUTH_API_BASE = storedApiBase || DEFAULT_API_BASE;
+  const getAuthUrl = (path) => `${AUTH_API_BASE}${path}`;
+
+  const loginBtn = document.createElement('button');
+  loginBtn.type = 'button';
+  loginBtn.className = 'stage-nav-login';
+  loginBtn.textContent = 'Войти';
+
+  let isAuthorized = false;
+  let currentEmail = '';
+  const getStoredToken = () => window.localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  const setStoredAuth = (token, email) => {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    window.localStorage.setItem(AUTH_EMAIL_KEY, email);
+  };
+  const clearStoredAuth = () => {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_EMAIL_KEY);
+  };
+  const setAuthUiState = (authorized, email = '') => {
+    isAuthorized = authorized;
+    currentEmail = email;
+    loginBtn.textContent = authorized ? `${email} · Выйти` : 'Войти';
+    loginBtn.title = authorized ? 'Выйти из аккаунта' : 'Войти в аккаунт';
+  };
+  const showAuthError = (message) => {
+    if (!authErrorEl) return;
+    authErrorEl.hidden = false;
+    authErrorEl.textContent = message;
+  };
+  const getValidationMessage = (payload) => {
+    const details = Array.isArray(payload?.detail) ? payload.detail : [];
+    if (!details.length) return 'Проверьте введенные данные.';
+    const first = details[0];
+    return String(first?.msg || first?.message || 'Проверьте введенные данные.');
+  };
+  const fetchCurrentUserEmail = async (token) => {
+    const response = await fetch(getAuthUrl('/me'), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return String(data?.email || '').trim();
+  };
+  const handleLogout = async () => {
+    const token = getStoredToken();
+    if (token) {
+      try {
+        await fetch(getAuthUrl('/logout'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        /* ignore network errors on logout */
+      }
+    }
+    clearStoredAuth();
+    setAuthUiState(false, '');
+  };
+  const handleLogin = async () => {
+    const email = String(authEmailInput?.value || '').trim().toLowerCase();
+    const password = String(authPasswordInput?.value || '');
+    if (!email || !password) {
+      showAuthError('Введите email и пароль.');
+      return;
+    }
+    if (authErrorEl) {
+      authErrorEl.hidden = true;
+      authErrorEl.textContent = '';
+    }
+    if (authSubmitBtn) authSubmitBtn.disabled = true;
+    try {
+      const loginResponse = await fetch(getAuthUrl('/login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!loginResponse.ok) {
+        if (loginResponse.status === 401) {
+          throw new Error('Неверный email или пароль.');
+        }
+        if (loginResponse.status === 429) {
+          throw new Error('Слишком много попыток входа. Попробуйте позже.');
+        }
+        throw new Error(`Ошибка входа: HTTP ${loginResponse.status}`);
+      }
+      const loginData = await loginResponse.json();
+      const token = String(loginData?.access_token || '').trim();
+      if (!token) throw new Error('Сервер не вернул токен.');
+      const userEmail = await fetchCurrentUserEmail(token);
+      if (!userEmail) throw new Error('Не удалось получить профиль пользователя.');
+      setStoredAuth(token, userEmail);
+      setAuthUiState(true, userEmail);
+      if (authPasswordInput) authPasswordInput.value = '';
+      closeAuthModal();
+    } catch (error) {
+      showAuthError(error instanceof Error ? error.message : 'Ошибка входа.');
+    } finally {
+      if (authSubmitBtn) authSubmitBtn.disabled = false;
+    }
+  };
+  const handleRegister = async () => {
+    const email = String(authEmailInput?.value || '').trim().toLowerCase();
+    const password = String(authPasswordInput?.value || '');
+    if (!email || !password) {
+      showAuthError('Введите email и пароль.');
+      return;
+    }
+    if (authErrorEl) {
+      authErrorEl.hidden = true;
+      authErrorEl.textContent = '';
+    }
+    if (authSubmitBtn) authSubmitBtn.disabled = true;
+    try {
+      const registerResponse = await fetch(getAuthUrl('/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!registerResponse.ok) {
+        if (registerResponse.status === 409) {
+          throw new Error('Email уже зарегистрирован.');
+        }
+        if (registerResponse.status === 422) {
+          let payload = null;
+          try {
+            payload = await registerResponse.json();
+          } catch {
+            payload = null;
+          }
+          throw new Error(getValidationMessage(payload));
+        }
+        throw new Error(`Ошибка регистрации: HTTP ${registerResponse.status}`);
+      }
+      setAuthMode('login');
+      if (authPasswordInput) authPasswordInput.value = '';
+      showAuthError('Регистрация успешна. Теперь войдите.');
+      if (authErrorEl) authErrorEl.hidden = false;
+    } catch (error) {
+      showAuthError(error instanceof Error ? error.message : 'Ошибка регистрации.');
+    } finally {
+      if (authSubmitBtn) authSubmitBtn.disabled = false;
+    }
+  };
+  const bootstrapAuthUi = async () => {
+    const token = getStoredToken();
+    const cachedEmail = String(window.localStorage.getItem(AUTH_EMAIL_KEY) || '').trim();
+    if (!token) {
+      setAuthUiState(false, '');
+      return;
+    }
+    if (cachedEmail) {
+      setAuthUiState(true, cachedEmail);
+    }
+    try {
+      const userEmail = await fetchCurrentUserEmail(token);
+      if (!userEmail) throw new Error('Empty email');
+      setStoredAuth(token, userEmail);
+      setAuthUiState(true, userEmail);
+    } catch {
+      clearStoredAuth();
+      setAuthUiState(false, '');
+    }
+  };
+
+  authSubmitBtn?.addEventListener('click', () => {
+    if (authMode === 'register') {
+      handleRegister();
+      return;
+    }
+    handleLogin();
+  });
+  authPasswordInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      if (authMode === 'register') {
+        handleRegister();
+        return;
+      }
+      handleLogin();
+    }
+  });
+  authRegisterBtn?.addEventListener('click', () => {
+    setAuthMode(authMode === 'login' ? 'register' : 'login');
+  });
+  loginBtn.addEventListener('click', () => {
+    if (isAuthorized) {
+      handleLogout();
+      return;
+    }
+    openAuthModal();
+  });
 
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
@@ -513,9 +908,15 @@ export function initStageNav(current, opts = {}) {
       closeHelpModal();
     }
   });
-
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !authModal.hidden) {
+      authModal.hidden = true;
+    }
+  });
+  
 
   row.appendChild(inner);
+  row.appendChild(loginBtn);
   row.appendChild(helpBtn);
   row.appendChild(saveBtn);
   row.appendChild(loadBtn);
@@ -531,4 +932,6 @@ export function initStageNav(current, opts = {}) {
   } else {
     document.body.insertBefore(nav, document.body.firstChild);
   }
+  document.body.appendChild(authModal);
+  bootstrapAuthUi();
 }
