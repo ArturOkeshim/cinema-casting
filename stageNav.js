@@ -314,6 +314,24 @@ export function initStageNav(current, opts = {}) {
   const sequence = hasBlocks && hasRole ? buildSequence(blocks, role) : [];
   const cursor = loadRehearsalCursor();
   const isRehearsalDone = sequence.length > 0 && cursor >= sequence.length;
+  const resolveLastAvailableHref = () => {
+    const latestBlocks = loadBlocks();
+    const latestRole = loadRole();
+    const latestHasBlocks = Array.isArray(latestBlocks) && latestBlocks.length > 0;
+    const latestHasRole = Boolean(latestRole && latestRole.trim());
+    const latestPartnerAudioReady = loadPartnerAudioReady();
+    const latestSequence =
+      latestHasBlocks && latestHasRole ? buildSequence(latestBlocks, latestRole) : [];
+    const latestCursor = loadRehearsalCursor();
+    const latestRehearsalDone =
+      latestSequence.length > 0 && latestCursor >= latestSequence.length;
+
+    if (!latestHasBlocks) return './index.html';
+    if (!latestHasRole) return './blocks.html';
+    if (!latestPartnerAudioReady) return './prep.html';
+    if (!latestRehearsalDone) return './rehearsal.html';
+    return './result.html';
+  };
   const stageStates = []
 
   for (const s of stages) {
@@ -433,6 +451,9 @@ export function initStageNav(current, opts = {}) {
     );
     if (!ok) return;
     pickAndImportSessionBackup({
+      onSuccess() {
+        window.location.href = resolveLastAvailableHref();
+      },
       onError(msg) {
         window.alert(`Не удалось загрузить пробу: ${msg}`);
       },

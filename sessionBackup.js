@@ -21,6 +21,7 @@ const FORMAT_ID = 'cinema-casting-session';
 /** v2 — ZIP с отдельными файлами; v1 — один JSON, audio в base64 */
 const FORMAT_VERSION_ZIP = 2;
 const FORMAT_VERSION_JSON_EMBED = 1;
+const SKIP_SCRIPT_PERSIST_ONCE_KEY = 'cinemaCasting.skipScriptPersistOnce';
 
 const FLOW_KEYS = [SCRIPT_TEXT_KEY, BLOCKS_KEY, ROLE_KEY, REHEARSAL_CURSOR_KEY];
 
@@ -182,6 +183,7 @@ export async function applyJsonBackupEmbedded(data) {
   }
   const entries = audioEntriesFromEmbeddedV1(data.audio);
   await applySessionPayload(data.flow, entries);
+  return data.flow;
 }
 
 /**
@@ -225,6 +227,7 @@ export async function applyZipBackup(arrayBuffer) {
   await Promise.all(tasks);
 
   await applySessionPayload(data.flow, entries);
+  return data.flow;
 }
 
 /**
@@ -306,17 +309,24 @@ export function pickAndImportSessionBackup(opts = {}) {
     if (!file) return;
     try {
       const name = (file.name || '').toLowerCase();
+      let importedFlow = null;
       if (name.endsWith('.zip')) {
         const buf = await file.arrayBuffer();
-        await applyZipBackup(buf);
+        importedFlow = await applyZipBackup(buf);
       } else if (name.endsWith('.json')) {
         const text = await file.text();
         const data = JSON.parse(text);
-        await applyJsonBackupEmbedded(data);
+        importedFlow = await applyJsonBackupEmbedded(data);
       } else {
         throw new Error('Ожидается файл .zip или .json');
       }
-      window.location.reload();
+      try {
+        sessionStorage.setItem(SKIP_SCRIPT_PERSIST_ONCE_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+      if (opts.onSuccess) opts.onSuccess(importedFlow);
+      else window.location.reload();
     } catch (e) {
       const msg =
         e instanceof SyntaxError

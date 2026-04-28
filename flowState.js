@@ -7,11 +7,7 @@ export const REHEARSAL_CURSOR_KEY = 'cinemaCasting.rehearsalCursor';
 export const PARTNER_AUDIO_READY_KEY = 'cinemaCasting.partnerAudioReady';
 
 export function loadScriptText() {
-  return (
-    localStorage.getItem(SCRIPT_TEXT_KEY) ||
-    sessionStorage.getItem(SCRIPT_TEXT_KEY) ||
-    ''
-  );
+  return localStorage.getItem(SCRIPT_TEXT_KEY) ?? sessionStorage.getItem(SCRIPT_TEXT_KEY) ?? '';
 }
 
 export function saveScriptText(text) {
