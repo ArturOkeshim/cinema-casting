@@ -23,7 +23,12 @@ _FORBIDDEN_PATH_SEGMENTS = frozenset({
     "venv",
     ".venv",
     "__pycache__",
+    "logs",
 })
+_EOS_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+_EOS_LOG_FILE = os.path.join(_EOS_LOG_DIR, "eos-debug.jsonl")
+_MAX_EOS_LOG_BODY = 64 * 1024
+_MAX_EOS_LOG_EVENTS = 20
 _FORBIDDEN_FILE_NAMES = frozenset({
     "id_rsa",
     "id_ecdsa",
@@ -121,13 +126,57 @@ class AppHandler(SimpleHTTPRequestHandler):
             raise RuntimeError("Speechmatics returned empty temporary token")
         return token
 
+    def _append_eos_log_events(self, events: list) -> None:
+        os.makedirs(_EOS_LOG_DIR, exist_ok=True)
+        with open(_EOS_LOG_FILE, "a", encoding="utf-8") as log_file:
+            for event in events:
+                log_file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    def _handle_eos_log(self, raw_body: bytes) -> None:
+        if len(raw_body) > _MAX_EOS_LOG_BODY:
+            self._send_json(413, {"error": "Payload too large"})
+            return
+        try:
+            body = json.loads(raw_body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "Invalid JSON body"})
+            return
+
+        events = body.get("events")
+        if not isinstance(events, list) or not events:
+            self._send_json(400, {"error": "Missing or empty events array"})
+            return
+        if len(events) > _MAX_EOS_LOG_EVENTS:
+            self._send_json(400, {"error": f"Too many events (max {_MAX_EOS_LOG_EVENTS})"})
+            return
+
+        for event in events:
+            if not isinstance(event, dict):
+                self._send_json(400, {"error": "Each event must be an object"})
+                return
+
+        try:
+            self._append_eos_log_events(events)
+        except OSError as exc:
+            self._send_json(500, {"error": f"Failed to write log: {exc}"})
+            return
+
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+
+        if self.path == "/api/eos-log":
+            self._handle_eos_log(raw_body)
+            return
+
         if self.path != "/api/llm":
             self._send_json(404, {"error": "Not found"})
             return
 
-        content_length = int(self.headers.get("Content-Length", "0"))
-        raw_body = self.rfile.read(content_length) if content_length > 0 else b"{}"
         try:
             body = json.loads(raw_body.decode("utf-8"))
         except json.JSONDecodeError:

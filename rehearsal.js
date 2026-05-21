@@ -4,6 +4,19 @@ import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
 import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
 import { extractSpeakable, escapeHtml, buildSequence } from './rehearsalSequence.js';
+import {
+  initEosLogSession,
+  beginActorTurn,
+  recordPartial,
+  recordFinal,
+  recordActorSmError,
+  logSmTokenFail,
+  logRehearsalEnd,
+  noteTokenRefresh,
+  getActorTurnSnapshot,
+  flushTurnEnd,
+  metricsForHypothesis,
+} from './eosLog.js';
 
 initStageNav('rehearsal');
 
@@ -290,6 +303,7 @@ function updateStepCounter() {
 async function ensureSmToken(opts = {}) {
   const now = Date.now();
   if (!opts.force && smToken && smTokenExpiresAtMs - now > 60_000) return true;
+  if (opts.force && smToken) noteTokenRefresh();
   const res = await fetch('/api/sm-token');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -459,6 +473,46 @@ async function runPartnerStep(step) {
   }).catch(next);
 }
 
+function emitActorTurnLog(finishReason) {
+  const snap = getActorTurnSnapshot();
+  if (!snap) return;
+
+  const hypFinal = finalSegments.join(' ').trim();
+  const hypWithPartial = snap.lastPartialText
+    ? `${hypFinal} ${snap.lastPartialText}`.trim()
+    : hypFinal;
+
+  const finalPack = metricsForHypothesis(snap.speakableText, hypFinal, snap.thresholds);
+  const partialPack = metricsForHypothesis(snap.speakableText, hypWithPartial, snap.thresholds);
+
+  flushTurnEnd({
+    finishReason,
+    seqIdx: snap.seqIdx,
+    actorTurnIndex: snap.actorTurnIndex,
+    speakableText: snap.speakableText,
+    thresholds: snap.thresholds,
+    hypothesisFinal: hypFinal,
+    hypothesisWithPartial: hypWithPartial,
+    metricsFinal: finalPack.metrics,
+    metricsWithPartial: partialPack.metrics,
+    failedGatesFinal: finalPack.failedGates,
+    failedGatesWithPartial: partialPack.failedGates,
+    gateMarginsFinal: finalPack.gateMargins,
+    gateMarginsWithPartial: partialPack.gateMargins,
+    partialWouldPass: partialPack.passed,
+    partialCount: snap.partialCount,
+    finalCount: snap.finalCount,
+    timeline: snap.timeline,
+    bestNearMiss: snap.bestNearMiss,
+    turnDurationMs: snap.turnDurationMs,
+    rehearsalDurationMs: snap.rehearsalDurationMs,
+    tokenRefreshCount: snap.tokenRefreshCount,
+    smError: snap.smError,
+    smConnected: Boolean(persistentSession),
+    recordingBytes: recordedChunks.reduce((n, c) => n + (c.size || 0), 0),
+  });
+}
+
 // ── Реплика актёра ─────────────────────────────────────────────────────────
 async function runActorStep(step, seqIdx) {
   hide(loadingSection);
@@ -474,23 +528,27 @@ async function runActorStep(step, seqIdx) {
   turnDone = false;
 
   const { minLenRatio, scoreThreshold } = adaptiveThresholds(speakableText);
+  const thresholds = { minLenRatio, scoreThreshold };
+  beginActorTurn({ seqIdx, speakableText, thresholds });
 
   try {
     const ok = await ensureSmToken();
     if (!ok) {
+      logSmTokenFail(seqIdx, 'empty token');
       if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Готово» вручную.';
       return;
     }
     await maybeReconnectPersistentIfTokenStale();
   } catch (e) {
     console.error('Failed to refresh Speechmatics token:', e);
+    logSmTokenFail(seqIdx, String(e));
     if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Готово» вручную.';
     return;
   }
 
-  // Skip-кнопка — «Готово» вручную
+  // Skip-кнопка — ручное завершение реплики
   if (currentSkipHandler) skipBtn.removeEventListener('click', currentSkipHandler);
-  currentSkipHandler = () => { if (!turnDone) finishActorTurn(seqIdx); };
+  currentSkipHandler = () => { if (!turnDone) finishActorTurn(seqIdx, 'manual'); };
   skipBtn.addEventListener('click', currentSkipHandler);
 
   // MediaRecorder — запись реплики актёра
@@ -509,7 +567,8 @@ async function runActorStep(step, seqIdx) {
       if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${text}`;
       const hyp = `${finalSegments.join(' ')} ${text}`.trim();
       if (!hyp) return;
-      const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      const { score, lenRatio, tail, coverage, fuzzy } = calcScore(speakableText, hyp);
+      recordPartial(text, { score, lenRatio, tail, coverage, fuzzy }, thresholds);
       setCurrentLineProgress(
         calcActorLineProgress({
           score,
@@ -526,7 +585,8 @@ async function runActorStep(step, seqIdx) {
       const hyp = finalSegments.join(' ');
       if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${hyp}`;
 
-      const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      const { score, lenRatio, tail, coverage, fuzzy } = calcScore(speakableText, hyp);
+      const { passed } = recordFinal(text, { score, lenRatio, tail, coverage, fuzzy }, thresholds);
       setCurrentLineProgress(
         calcActorLineProgress({
           score,
@@ -536,13 +596,14 @@ async function runActorStep(step, seqIdx) {
           minLenRatio,
         })
       );
-      if (lenRatio >= minLenRatio && score >= scoreThreshold && tail >= MIN_TAIL_SCORE) {
+      if (passed) {
         setCurrentLineProgress(1);
-        finishActorTurn(seqIdx);
+        finishActorTurn(seqIdx, 'auto');
       }
     },
     onError(e) {
       console.error('Persistent session error:', e);
+      recordActorSmError(String(e));
       if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
     },
   });
@@ -550,8 +611,9 @@ async function runActorStep(step, seqIdx) {
 }
 
 // ── Завершение реплики актёра ──────────────────────────────────────────────
-function finishActorTurn(seqIdx) {
+function finishActorTurn(seqIdx, finishReason = 'manual') {
   if (turnDone) return;
+  emitActorTurnLog(finishReason);
   turnDone = true;
 
   if (currentSkipHandler) {
@@ -590,6 +652,7 @@ function finishActorTurn(seqIdx) {
 
 /** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
 function finishRehearsalAndGoToResult() {
+  logRehearsalEnd({ completed: true, cursor: sequence.length });
   clearMaxDurationWatch();
   stopLineProgress();
   persistentSession?.destroy();
@@ -680,6 +743,14 @@ async function startRecordingSession() {
     }
   }
   persistentSession.pauseSending();
+
+  const actorLineCount = sequence.filter((s) => s.type === 'actor').length;
+  initEosLogSession({
+    role,
+    actorLineCount,
+    vocabCount: sessionAdditionalVocab.length,
+    sequenceLength: sequence.length,
+  });
 
   await showStartCountdown();
 
