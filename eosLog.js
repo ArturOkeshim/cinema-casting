@@ -32,6 +32,9 @@ function roundMetrics(raw) {
     fuzzy: Number(raw.fuzzy.toFixed(4)),
     lenRatio: Number(raw.lenRatio.toFixed(4)),
     tail: Number(raw.tail.toFixed(4)),
+    tailExact: Number((raw.tailExact ?? raw.tail).toFixed(4)),
+    tailCore: Number((raw.tailCore ?? raw.tail).toFixed(4)),
+    tailOptionalMatch: Number((raw.tailOptionalMatch ?? 0).toFixed(4)),
   };
 }
 

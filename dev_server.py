@@ -36,7 +36,9 @@ _MAX_EOS_LOG_EVENTS = 10
 _TURNS_CSV_HEADERS = [
     "ts", "session_id", "role", "finish_reason", "seq_idx", "actor_turn_index",
     "reference", "hypothesis_raw", "hypothesis_trimmed", "trim_words_skipped", "trim_applied",
-    "tail_raw", "score_raw", "len_raw", "tail_trim", "score_trim", "len_trim",
+    "tail_raw", "score_raw", "len_raw",
+    "tail_trim", "tail_trim_exact", "tail_trim_core", "tail_trim_optional",
+    "score_trim", "len_trim",
     "failed_gates_trim", "tail_margin_trim", "score_margin_trim", "len_margin_trim",
     "passed_trim", "passed_raw", "partial_would_pass_trim",
     "hypothesis_with_partial_raw", "hypothesis_with_partial_trimmed",
@@ -47,7 +49,9 @@ _TURNS_CSV_HEADERS = [
 _FINALS_CSV_HEADERS = [
     "ts", "session_id", "role", "seq_idx", "actor_turn_index", "final_index", "t_ms",
     "segment_text", "hypothesis_raw", "hypothesis_trimmed", "trim_words_skipped",
-    "tail_raw", "score_raw", "len_raw", "tail_trim", "score_trim", "len_trim",
+    "tail_raw", "score_raw", "len_raw",
+    "tail_trim", "tail_trim_exact", "tail_trim_core", "tail_trim_optional",
+    "score_trim", "len_trim",
     "passed_raw", "passed_trim", "failed_gates_trim",
 ]
 
@@ -92,6 +96,9 @@ def _csv_rows_for_turn_end(ev: dict) -> tuple[dict, list[dict]]:
         "score_raw": _metric_block(ev, "metricsRaw", "score"),
         "len_raw": _metric_block(ev, "metricsRaw", "lenRatio"),
         "tail_trim": _metric_block(ev, "metricsTrimmed", "tail") or _metric_block(ev, "metricsFinal", "tail"),
+        "tail_trim_exact": _metric_block(ev, "metricsTrimmed", "tailExact"),
+        "tail_trim_core": _metric_block(ev, "metricsTrimmed", "tailCore"),
+        "tail_trim_optional": _metric_block(ev, "metricsTrimmed", "tailOptionalMatch"),
         "score_trim": _metric_block(ev, "metricsTrimmed", "score") or _metric_block(ev, "metricsFinal", "score"),
         "len_trim": _metric_block(ev, "metricsTrimmed", "lenRatio") or _metric_block(ev, "metricsFinal", "lenRatio"),
         "failed_gates_trim": _csv_join(ev.get("failedGatesTrimmed") or ev.get("failedGatesFinal") or []),
@@ -135,6 +142,9 @@ def _csv_rows_for_turn_end(ev: dict) -> tuple[dict, list[dict]]:
             "score_raw": m_raw.get("score"),
             "len_raw": m_raw.get("lenRatio"),
             "tail_trim": m_trim.get("tail"),
+            "tail_trim_exact": m_trim.get("tailExact"),
+            "tail_trim_core": m_trim.get("tailCore"),
+            "tail_trim_optional": m_trim.get("tailOptionalMatch"),
             "score_trim": m_trim.get("score"),
             "len_trim": m_trim.get("lenRatio"),
             "passed_raw": item.get("passedRaw"),
