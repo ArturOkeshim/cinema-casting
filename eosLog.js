@@ -1,14 +1,16 @@
 /**
- * Диагностика авто-EOS: события уходят на POST /api/eos-log → logs/eos-debug.jsonl
+ * Диагностика авто-EOS: POST /api/eos-log → logs/eos-debug.jsonl + CSV-таблицы.
+ * v2: сырой/обрезанный текст, метрики raw vs trim, timeline finals для офлайн-экспериментов.
  */
 
-import { calcScore, MIN_TAIL_SCORE } from './scorer.js';
+import { calcScore, MIN_TAIL_SCORE, trimHypothesisWithMeta } from './scorer.js';
 
-const SCHEMA_VERSION = 1;
-const MAX_TIMELINE = 30;
+export const EOS_LOG_SCHEMA_VERSION = 2;
+const MAX_TIMELINE = 40;
 const PARTIAL_THROTTLE_MS = 1000;
 
 let sessionId = null;
+let rehearsalRole = '';
 let rehearsalStartMs = 0;
 let tokenRefreshCount = 0;
 let actorTurnCounter = 0;
@@ -40,6 +42,28 @@ export function metricsForHypothesis(speakableText, hypothesis, thresholds) {
   return { metrics, failedGates, gateMargins, passed };
 }
 
+/** Метрики по сырой гипотезе и после trimHypothesisPrefix. */
+export function scoreHypothesisPair(speakableText, hypothesisRaw, thresholds) {
+  const { hypothesisRaw: raw, hypothesisTrimmed, trimWordsSkipped, trimApplied } =
+    trimHypothesisWithMeta(speakableText, hypothesisRaw);
+  const rawPack = metricsForHypothesis(speakableText, raw, thresholds);
+  const trimPack = metricsForHypothesis(speakableText, hypothesisTrimmed, thresholds);
+  return {
+    hypothesisRaw: raw,
+    hypothesisTrimmed,
+    trimWordsSkipped,
+    trimApplied,
+    metricsRaw: rawPack.metrics,
+    metricsTrimmed: trimPack.metrics,
+    failedGatesRaw: rawPack.failedGates,
+    failedGatesTrimmed: trimPack.failedGates,
+    gateMarginsRaw: rawPack.gateMargins,
+    gateMarginsTrimmed: trimPack.gateMargins,
+    passedRaw: rawPack.passed,
+    passedTrimmed: trimPack.passed,
+  };
+}
+
 export function computeGateStatus(metrics, thresholds) {
   const failedGates = [];
   const gateMargins = {};
@@ -62,9 +86,9 @@ export function computeGateStatus(metrics, thresholds) {
   return { failedGates, gateMargins, passed };
 }
 
-function updateBestNearMiss(metrics, source) {
+function updateBestNearMiss(metrics, source, which = 'trim') {
   if (!currentTurn) return;
-  const b = currentTurn.bestNearMiss;
+  const b = which === 'raw' ? currentTurn.bestNearMissRaw : currentTurn.bestNearMissTrim;
   if (metrics.score > b.score) {
     b.score = metrics.score;
     b.at = source;
@@ -103,8 +127,9 @@ async function postEvents(events) {
 
 function baseEnvelope() {
   return {
-    v: SCHEMA_VERSION,
+    v: EOS_LOG_SCHEMA_VERSION,
     sessionId,
+    role: rehearsalRole,
     ts: nowIso(),
     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
   };
@@ -112,6 +137,7 @@ function baseEnvelope() {
 
 export function initEosLogSession({ role, actorLineCount, vocabCount, sequenceLength }) {
   sessionId = crypto.randomUUID();
+  rehearsalRole = role || '';
   rehearsalStartMs = Date.now();
   tokenRefreshCount = 0;
   actorTurnCounter = 0;
@@ -120,7 +146,6 @@ export function initEosLogSession({ role, actorLineCount, vocabCount, sequenceLe
     {
       ...baseEnvelope(),
       event: 'rehearsal_start',
-      role,
       actorLineCount,
       vocabCount,
       sequenceLength,
@@ -145,9 +170,15 @@ export function beginActorTurn({ seqIdx, speakableText, thresholds }) {
     finalCount: 0,
     lastPartialLogMs: 0,
     timeline: [],
-    bestNearMiss: { score: 0, tail: 0, lenRatio: 0, at: '', atTail: '', atLen: '' },
+    bestNearMissTrim: { score: 0, tail: 0, lenRatio: 0, at: '', atTail: '', atLen: '' },
+    bestNearMissRaw: { score: 0, tail: 0, lenRatio: 0, at: '', atTail: '', atLen: '' },
     smError: null,
+    smResumeDelayMs: 0,
   };
+}
+
+export function noteActorSmResumeDelay(ms) {
+  if (currentTurn) currentTurn.smResumeDelayMs = ms;
 }
 
 export function recordActorSmError(message) {
@@ -162,13 +193,18 @@ export function recordActorSmError(message) {
   ]);
 }
 
-export function recordPartial(text, metrics, thresholds) {
+/**
+ * @param {string} partialText — последний partial от SM
+ * @param {string} hypothesisRaw — finalSegments + partial
+ */
+export function recordPartial(partialText, hypothesisRaw, thresholds) {
   if (!currentTurn) return;
   currentTurn.partialCount += 1;
-  currentTurn.lastPartialText = text.trim();
+  currentTurn.lastPartialText = partialText.trim();
 
-  const { passed } = computeGateStatus(metrics, thresholds);
-  updateBestNearMiss(metrics, `partial#${currentTurn.partialCount}`);
+  const pair = scoreHypothesisPair(currentTurn.speakableText, hypothesisRaw, thresholds);
+  updateBestNearMiss(pair.metricsTrimmed, `partial#${currentTurn.partialCount}`, 'trim');
+  updateBestNearMiss(pair.metricsRaw, `partial#${currentTurn.partialCount}`, 'raw');
 
   const now = Date.now();
   if (now - currentTurn.lastPartialLogMs < PARTIAL_THROTTLE_MS) return;
@@ -177,50 +213,50 @@ export function recordPartial(text, metrics, thresholds) {
   pushTimeline({
     kind: 'partial',
     tMs: relMsSince(currentTurn.turnStartMs),
-    score: Number(metrics.score.toFixed(4)),
-    lenRatio: Number(metrics.lenRatio.toFixed(4)),
-    tail: Number(metrics.tail.toFixed(4)),
-    wouldPass: passed,
+    partialText: partialText.trim().slice(0, 120),
+    hypothesisRaw: pair.hypothesisRaw.slice(0, 500),
+    hypothesisTrimmed: pair.hypothesisTrimmed.slice(0, 500),
+    trimWordsSkipped: pair.trimWordsSkipped,
+    tailTrim: pair.metricsTrimmed.tail,
+    scoreTrim: pair.metricsTrimmed.score,
+    tailRaw: pair.metricsRaw.tail,
+    scoreRaw: pair.metricsRaw.score,
+    wouldPassTrim: pair.passedTrimmed,
+    wouldPassRaw: pair.passedRaw,
   });
 }
 
-export function recordFinal(text, metrics, thresholds) {
+/**
+ * @param {string} finalSegmentText — текст этого final-сегмента
+ * @param {string} hypothesisRaw — все finals накопленные
+ */
+export function recordFinal(finalSegmentText, hypothesisRaw, thresholds) {
   if (!currentTurn) return;
   currentTurn.finalCount += 1;
   const idx = currentTurn.finalCount;
-  const { failedGates, gateMargins, passed } = computeGateStatus(metrics, thresholds);
-  updateBestNearMiss(metrics, `final#${idx}`);
+
+  const pair = scoreHypothesisPair(currentTurn.speakableText, hypothesisRaw, thresholds);
+  updateBestNearMiss(pair.metricsTrimmed, `final#${idx}`, 'trim');
+  updateBestNearMiss(pair.metricsRaw, `final#${idx}`, 'raw');
 
   pushTimeline({
     kind: 'final',
+    finalIndex: idx,
     tMs: relMsSince(currentTurn.turnStartMs),
-    text: text.trim().slice(0, 200),
-    score: Number(metrics.score.toFixed(4)),
-    lenRatio: Number(metrics.lenRatio.toFixed(4)),
-    tail: Number(metrics.tail.toFixed(4)),
-    coverage: Number(metrics.coverage.toFixed(4)),
-    fuzzy: Number(metrics.fuzzy.toFixed(4)),
-    passed,
-    failedGates,
+    segmentText: finalSegmentText.trim().slice(0, 200),
+    hypothesisRaw: pair.hypothesisRaw.slice(0, 800),
+    hypothesisTrimmed: pair.hypothesisTrimmed.slice(0, 800),
+    trimWordsSkipped: pair.trimWordsSkipped,
+    trimApplied: pair.trimApplied,
+    metricsTrimmed: pair.metricsTrimmed,
+    metricsRaw: pair.metricsRaw,
+    failedGatesTrimmed: pair.failedGatesTrimmed,
+    failedGatesRaw: pair.failedGatesRaw,
+    passedTrimmed: pair.passedTrimmed,
+    passedRaw: pair.passedRaw,
   });
 
-  if (!passed && (failedGates.length <= 2)) {
-    const near = metrics.tail >= MIN_TAIL_SCORE - 0.08 || metrics.score >= thresholds.scoreThreshold - 0.06;
-    if (near) {
-      postEvents([
-        {
-          ...baseEnvelope(),
-          event: 'near_miss_final',
-          seqIdx: currentTurn.seqIdx,
-          finalIndex: idx,
-          metrics,
-          failedGates,
-          gateMargins,
-        },
-      ]);
-    }
-  }
-  return { passed, failedGates, gateMargins };
+  return { passed: pair.passedTrimmed, pair };
 }
 
 export function getActorTurnSnapshot() {
@@ -234,8 +270,10 @@ export function getActorTurnSnapshot() {
     partialCount: t.partialCount,
     finalCount: t.finalCount,
     timeline: [...t.timeline],
-    bestNearMiss: { ...t.bestNearMiss },
+    bestNearMissTrim: { ...t.bestNearMissTrim },
+    bestNearMissRaw: { ...t.bestNearMissRaw },
     smError: t.smError,
+    smResumeDelayMs: t.smResumeDelayMs,
     turnDurationMs: relMsSince(t.turnStartMs),
     rehearsalDurationMs: relMsSince(rehearsalStartMs),
     tokenRefreshCount,
@@ -255,24 +293,36 @@ export function flushTurnEnd(payload) {
     actorTurnIndex,
     speakableText,
     thresholds,
-    hypothesisFinal,
-    hypothesisWithPartial,
-    metricsFinal,
-    metricsWithPartial,
-    failedGatesFinal,
-    failedGatesWithPartial,
-    gateMarginsFinal,
-    gateMarginsWithPartial,
-    partialWouldPass,
+    hypothesisRaw,
+    hypothesisTrimmed,
+    trimWordsSkipped,
+    trimApplied,
+    metricsRaw,
+    metricsTrimmed,
+    failedGatesRaw,
+    failedGatesTrimmed,
+    gateMarginsRaw,
+    gateMarginsTrimmed,
+    passedRaw,
+    passedTrimmed,
+    hypothesisWithPartialRaw,
+    hypothesisWithPartialTrimmed,
+    metricsPartialRaw,
+    metricsPartialTrimmed,
+    partialWouldPassRaw,
+    partialWouldPassTrimmed,
+    failedGatesPartialTrimmed,
     partialCount,
     finalCount,
     timeline,
-    bestNearMiss,
+    bestNearMissTrim,
+    bestNearMissRaw,
     turnDurationMs,
     rehearsalDurationMs,
     tokenRefreshCount: refreshes,
     smError,
     smConnected,
+    smResumeDelayMs,
     recordingBytes,
   } = payload;
 
@@ -285,34 +335,56 @@ export function flushTurnEnd(payload) {
     speakableText,
     speakableWordCount: speakableText.split(/\s+/).filter(Boolean).length,
     thresholds,
-    hypothesisFinal,
-    hypothesisWithPartial,
-    metricsFinal,
-    metricsWithPartial,
-    failedGatesFinal,
-    failedGatesWithPartial,
-    gateMarginsFinal,
-    gateMarginsWithPartial,
-    partialWouldPass,
+    hypothesisRaw,
+    hypothesisTrimmed,
+    trimWordsSkipped,
+    trimApplied,
+    metricsRaw,
+    metricsTrimmed,
+    failedGatesRaw,
+    failedGatesTrimmed,
+    gateMarginsRaw,
+    gateMarginsTrimmed,
+    passedRaw,
+    passedTrimmed,
+    hypothesisWithPartialRaw,
+    hypothesisWithPartialTrimmed,
+    metricsPartialRaw,
+    metricsPartialTrimmed,
+    partialWouldPassRaw,
+    partialWouldPassTrimmed,
+    failedGatesPartialTrimmed,
     partialCount,
     finalCount,
     timeline,
-    bestNearMiss,
+    bestNearMissTrim,
+    bestNearMissRaw,
     turnDurationMs,
     rehearsalDurationMs,
     tokenRefreshCount: refreshes,
     smError,
     smConnected,
+    smResumeDelayMs,
     recordingBytes,
+    /** Для обратной совместимости со старым Excel-скриптом */
+    hypothesisFinal: hypothesisTrimmed,
+    hypothesisWithPartial: hypothesisWithPartialTrimmed,
+    metricsFinal: metricsTrimmed,
+    metricsWithPartial: metricsPartialTrimmed,
+    failedGatesFinal: failedGatesTrimmed,
+    failedGatesWithPartial: failedGatesPartialTrimmed,
+    gateMarginsFinal: gateMarginsTrimmed,
+    partialWouldPass: partialWouldPassTrimmed,
   };
 
   if (finishReason === 'manual') {
     console.warn('[eos-log] manual_skip', {
       seqIdx,
-      failedGatesFinal,
-      gateMarginsFinal,
-      metricsFinal,
-      metricsWithPartial,
+      failedGatesTrimmed,
+      gateMarginsTrimmed: gateMarginsTrimmed,
+      metricsTrimmed,
+      trimApplied,
+      trimWordsSkipped,
     });
   }
 

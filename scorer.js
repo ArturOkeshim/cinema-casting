@@ -56,6 +56,56 @@ export function adaptiveThresholds(reference) {
   return { minLenRatio: 0.48, scoreThreshold: 0.58 };
 }
 
+/**
+ * Ищет в гипотезе первое вхождение биграммы из начала эталона и возвращает
+ * гипотезу начиная с этого места. Если биграмма не найдена или эталон короче
+ * двух слов — возвращает исходную гипотезу без изменений.
+ *
+ * Это нужно чтобы отрезать мусорный префикс (хвост реплики партнёра,
+ * случайные слова из микрофона), который смещает «окно хвоста» и занижает tail.
+ *
+ * Применяется только если:
+ *   - эталон ≥ 4 слов (на коротких фразах риск ложного совпадения выше);
+ *   - найденная позиция не в самом конце гипотезы (оставляем минимум 2 слова).
+ */
+export function trimHypothesisPrefix(reference, hypothesis) {
+  const refWords = normalizeText(reference).split(' ').filter(Boolean);
+  const hypWords = normalizeText(hypothesis).split(' ').filter(Boolean);
+
+  if (refWords.length < 4 || hypWords.length < 2) return hypothesis;
+
+  const [w0, w1] = refWords;
+
+  for (let i = 0; i < hypWords.length - 1; i++) {
+    if (hypWords[i] === w0 && hypWords[i + 1] === w1) {
+      if (i === 0) return hypothesis;
+      if (hypWords.length - i < 2) return hypothesis;
+      return hypWords.slice(i).join(' ');
+    }
+  }
+
+  return hypothesis;
+}
+
+/** Сколько слов отрезано префиксом (0 если trim не применялся). */
+export function countTrimmedWords(reference, hypothesisRaw, hypothesisTrimmed) {
+  const raw = normalizeText(hypothesisRaw).split(' ').filter(Boolean);
+  const trimmed = normalizeText(hypothesisTrimmed).split(' ').filter(Boolean);
+  if (raw.length === 0 || raw.join(' ') === trimmed.join(' ')) return 0;
+  return Math.max(0, raw.length - trimmed.length);
+}
+
+export function trimHypothesisWithMeta(reference, hypothesis) {
+  const trimmed = trimHypothesisPrefix(reference, hypothesis);
+  const trimWordsSkipped = countTrimmedWords(reference, hypothesis, trimmed);
+  return {
+    hypothesisRaw: hypothesis,
+    hypothesisTrimmed: trimmed,
+    trimWordsSkipped,
+    trimApplied: trimWordsSkipped > 0,
+  };
+}
+
 export function calcScore(reference, hypothesis) {
   const refNorm  = normalizeText(reference);
   const hypNorm  = normalizeText(hypothesis);

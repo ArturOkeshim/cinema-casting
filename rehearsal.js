@@ -1,6 +1,6 @@
 import { getPartnerAudio, getActorRecording, storeActorRecording, clearActorClips } from './audioDb.js';
 import { PersistentSpeechmaticsSession } from './recognizer.js';
-import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
+import { adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
 import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
 import { extractSpeakable, escapeHtml, buildSequence } from './rehearsalSequence.js';
@@ -13,9 +13,10 @@ import {
   logSmTokenFail,
   logRehearsalEnd,
   noteTokenRefresh,
+  noteActorSmResumeDelay,
   getActorTurnSnapshot,
   flushTurnEnd,
-  metricsForHypothesis,
+  scoreHypothesisPair,
 } from './eosLog.js';
 
 initStageNav('rehearsal');
@@ -36,6 +37,15 @@ const TOKEN_REFRESH_BUFFER_MS = 120_000;
 
 /** Пауза между цифрами отсчёта перед стартом репетиции (мс) */
 const COUNTDOWN_STEP_MS = 1000;
+
+/**
+ * Пауза перед отправкой микрофона в Speechmatics после реплики партнёра.
+ * Снижает попадание хвоста из колонок в распознавание. Запись MediaRecorder идёт сразу.
+ * Наушники: часто хватает 150–250 ms; колонки/комната: 400–700 ms.
+ * Подбор на устройстве: rehearsal.html?smResumeDelay=500
+ */
+const ACTOR_SM_RESUME_DELAY_MS = 450;
+const ACTOR_SM_RESUME_DELAY_MAX_MS = 2000;
 
 /** Неотслеживаемый «забыл вкладку» + экономия Speechmatics: лимит одной сессии с момента старта репетиции. */
 const MAX_REHEARSAL_SESSION_MS = 30 * 60 * 1000;
@@ -280,6 +290,21 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Задержка resumeSending только если перед этим играл партнёр (не для первой реплики без партнёра). */
+function actorSmResumeDelayMs(seqIdx) {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('smResumeDelay');
+  if (raw != null && raw !== '') {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0 && n <= ACTOR_SM_RESUME_DELAY_MAX_MS) {
+      return n;
+    }
+  }
+  const prev = sequence[seqIdx - 1];
+  if (prev?.type !== 'partner') return 0;
+  return ACTOR_SM_RESUME_DELAY_MS;
+}
+
 /** После готовности микрофона и Speechmatics — 3, 2, 1, затем сцена. */
 async function showStartCountdown() {
   show(loadingSection);
@@ -477,13 +502,13 @@ function emitActorTurnLog(finishReason) {
   const snap = getActorTurnSnapshot();
   if (!snap) return;
 
-  const hypFinal = finalSegments.join(' ').trim();
-  const hypWithPartial = snap.lastPartialText
-    ? `${hypFinal} ${snap.lastPartialText}`.trim()
-    : hypFinal;
+  const hypRaw = finalSegments.join(' ').trim();
+  const hypWithPartialRaw = snap.lastPartialText
+    ? `${hypRaw} ${snap.lastPartialText}`.trim()
+    : hypRaw;
 
-  const finalPack = metricsForHypothesis(snap.speakableText, hypFinal, snap.thresholds);
-  const partialPack = metricsForHypothesis(snap.speakableText, hypWithPartial, snap.thresholds);
+  const finalPair = scoreHypothesisPair(snap.speakableText, hypRaw, snap.thresholds);
+  const partialPair = scoreHypothesisPair(snap.speakableText, hypWithPartialRaw, snap.thresholds);
 
   flushTurnEnd({
     finishReason,
@@ -491,24 +516,36 @@ function emitActorTurnLog(finishReason) {
     actorTurnIndex: snap.actorTurnIndex,
     speakableText: snap.speakableText,
     thresholds: snap.thresholds,
-    hypothesisFinal: hypFinal,
-    hypothesisWithPartial: hypWithPartial,
-    metricsFinal: finalPack.metrics,
-    metricsWithPartial: partialPack.metrics,
-    failedGatesFinal: finalPack.failedGates,
-    failedGatesWithPartial: partialPack.failedGates,
-    gateMarginsFinal: finalPack.gateMargins,
-    gateMarginsWithPartial: partialPack.gateMargins,
-    partialWouldPass: partialPack.passed,
+    hypothesisRaw: finalPair.hypothesisRaw,
+    hypothesisTrimmed: finalPair.hypothesisTrimmed,
+    trimWordsSkipped: finalPair.trimWordsSkipped,
+    trimApplied: finalPair.trimApplied,
+    metricsRaw: finalPair.metricsRaw,
+    metricsTrimmed: finalPair.metricsTrimmed,
+    failedGatesRaw: finalPair.failedGatesRaw,
+    failedGatesTrimmed: finalPair.failedGatesTrimmed,
+    gateMarginsRaw: finalPair.gateMarginsRaw,
+    gateMarginsTrimmed: finalPair.gateMarginsTrimmed,
+    passedRaw: finalPair.passedRaw,
+    passedTrimmed: finalPair.passedTrimmed,
+    hypothesisWithPartialRaw: partialPair.hypothesisRaw,
+    hypothesisWithPartialTrimmed: partialPair.hypothesisTrimmed,
+    metricsPartialRaw: partialPair.metricsRaw,
+    metricsPartialTrimmed: partialPair.metricsTrimmed,
+    partialWouldPassRaw: partialPair.passedRaw,
+    partialWouldPassTrimmed: partialPair.passedTrimmed,
+    failedGatesPartialTrimmed: partialPair.failedGatesTrimmed,
     partialCount: snap.partialCount,
     finalCount: snap.finalCount,
     timeline: snap.timeline,
-    bestNearMiss: snap.bestNearMiss,
+    bestNearMissTrim: snap.bestNearMissTrim,
+    bestNearMissRaw: snap.bestNearMissRaw,
     turnDurationMs: snap.turnDurationMs,
     rehearsalDurationMs: snap.rehearsalDurationMs,
     tokenRefreshCount: snap.tokenRefreshCount,
     smError: snap.smError,
     smConnected: Boolean(persistentSession),
+    smResumeDelayMs: snap.smResumeDelayMs,
     recordingBytes: recordedChunks.reduce((n, c) => n + (c.size || 0), 0),
   });
 }
@@ -564,16 +601,17 @@ async function runActorStep(step, seqIdx) {
 
   persistentSession.setHandlers({
     onPartial(text) {
-      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${text}`;
-      const hyp = `${finalSegments.join(' ')} ${text}`.trim();
-      if (!hyp) return;
-      const { score, lenRatio, tail, coverage, fuzzy } = calcScore(speakableText, hyp);
-      recordPartial(text, { score, lenRatio, tail, coverage, fuzzy }, thresholds);
+      const hypRaw = `${finalSegments.join(' ')} ${text}`.trim();
+      if (!hypRaw) return;
+      const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
+      recordPartial(text, hypRaw, thresholds);
+      const m = pair.metricsTrimmed;
       setCurrentLineProgress(
         calcActorLineProgress({
-          score,
-          lenRatio,
-          tail,
+          score: m.score,
+          lenRatio: m.lenRatio,
+          tail: m.tail,
           scoreThreshold,
           minLenRatio,
         })
@@ -582,16 +620,17 @@ async function runActorStep(step, seqIdx) {
     onFinal(text) {
       if (turnDone) return;
       finalSegments.push(text.trim());
-      const hyp = finalSegments.join(' ');
-      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${hyp}`;
+      const hypRaw = finalSegments.join(' ');
+      const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
 
-      const { score, lenRatio, tail, coverage, fuzzy } = calcScore(speakableText, hyp);
-      const { passed } = recordFinal(text, { score, lenRatio, tail, coverage, fuzzy }, thresholds);
+      const { passed } = recordFinal(text.trim(), hypRaw, thresholds);
+      const m = pair.metricsTrimmed;
       setCurrentLineProgress(
         calcActorLineProgress({
-          score,
-          lenRatio,
-          tail,
+          score: m.score,
+          lenRatio: m.lenRatio,
+          tail: m.tail,
           scoreThreshold,
           minLenRatio,
         })
@@ -607,6 +646,14 @@ async function runActorStep(step, seqIdx) {
       if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
     },
   });
+
+  const smResumeDelayMs = actorSmResumeDelayMs(seqIdx);
+  noteActorSmResumeDelay(smResumeDelayMs);
+  if (smResumeDelayMs > 0) {
+    console.debug(`[rehearsal] SM resume delayed ${smResumeDelayMs}ms after partner`);
+    await delay(smResumeDelayMs);
+    if (turnDone) return;
+  }
   persistentSession.resumeSending();
 }
 

@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import time
@@ -27,8 +28,120 @@ _FORBIDDEN_PATH_SEGMENTS = frozenset({
 })
 _EOS_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 _EOS_LOG_FILE = os.path.join(_EOS_LOG_DIR, "eos-debug.jsonl")
-_MAX_EOS_LOG_BODY = 64 * 1024
-_MAX_EOS_LOG_EVENTS = 20
+_EOS_TURNS_CSV = os.path.join(_EOS_LOG_DIR, "eos-turns.csv")
+_EOS_FINALS_CSV = os.path.join(_EOS_LOG_DIR, "eos-finals.csv")
+_MAX_EOS_LOG_BODY = 128 * 1024
+_MAX_EOS_LOG_EVENTS = 10
+
+_TURNS_CSV_HEADERS = [
+    "ts", "session_id", "role", "finish_reason", "seq_idx", "actor_turn_index",
+    "reference", "hypothesis_raw", "hypothesis_trimmed", "trim_words_skipped", "trim_applied",
+    "tail_raw", "score_raw", "len_raw", "tail_trim", "score_trim", "len_trim",
+    "failed_gates_trim", "tail_margin_trim", "score_margin_trim", "len_margin_trim",
+    "passed_trim", "passed_raw", "partial_would_pass_trim",
+    "hypothesis_with_partial_raw", "hypothesis_with_partial_trimmed",
+    "partial_count", "final_count", "turn_duration_sec", "sm_resume_delay_ms",
+    "sm_error", "threshold_len", "threshold_score", "threshold_tail",
+]
+
+_FINALS_CSV_HEADERS = [
+    "ts", "session_id", "role", "seq_idx", "actor_turn_index", "final_index", "t_ms",
+    "segment_text", "hypothesis_raw", "hypothesis_trimmed", "trim_words_skipped",
+    "tail_raw", "score_raw", "len_raw", "tail_trim", "score_trim", "len_trim",
+    "passed_raw", "passed_trim", "failed_gates_trim",
+]
+
+
+def _csv_join(items) -> str:
+    if not items:
+        return ""
+    return ", ".join(str(x) for x in items)
+
+
+def _metric_block(ev: dict, block: str, key: str):
+    return (ev.get(block) or {}).get(key)
+
+
+def _append_csv_rows(path: str, headers: list[str], rows: list[dict]) -> None:
+    os.makedirs(_EOS_LOG_DIR, exist_ok=True)
+    write_header = not os.path.isfile(path) or os.path.getsize(path) == 0
+    with open(path, "a", encoding="utf-8-sig", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=headers, extrasaction="ignore")
+        if write_header:
+            writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _csv_rows_for_turn_end(ev: dict) -> tuple[dict, list[dict]]:
+    th = ev.get("thresholds") or {}
+    gm = ev.get("gateMarginsTrimmed") or {}
+    turn_row = {
+        "ts": ev.get("ts", ""),
+        "session_id": ev.get("sessionId", ""),
+        "role": ev.get("role", ""),
+        "finish_reason": ev.get("finishReason", ""),
+        "seq_idx": ev.get("seqIdx"),
+        "actor_turn_index": ev.get("actorTurnIndex"),
+        "reference": ev.get("speakableText", ""),
+        "hypothesis_raw": ev.get("hypothesisRaw") or ev.get("hypothesisFinal", ""),
+        "hypothesis_trimmed": ev.get("hypothesisTrimmed") or ev.get("hypothesisFinal", ""),
+        "trim_words_skipped": ev.get("trimWordsSkipped", 0),
+        "trim_applied": ev.get("trimApplied", False),
+        "tail_raw": _metric_block(ev, "metricsRaw", "tail"),
+        "score_raw": _metric_block(ev, "metricsRaw", "score"),
+        "len_raw": _metric_block(ev, "metricsRaw", "lenRatio"),
+        "tail_trim": _metric_block(ev, "metricsTrimmed", "tail") or _metric_block(ev, "metricsFinal", "tail"),
+        "score_trim": _metric_block(ev, "metricsTrimmed", "score") or _metric_block(ev, "metricsFinal", "score"),
+        "len_trim": _metric_block(ev, "metricsTrimmed", "lenRatio") or _metric_block(ev, "metricsFinal", "lenRatio"),
+        "failed_gates_trim": _csv_join(ev.get("failedGatesTrimmed") or ev.get("failedGatesFinal") or []),
+        "tail_margin_trim": gm.get("tail"),
+        "score_margin_trim": gm.get("score"),
+        "len_margin_trim": gm.get("lenRatio"),
+        "passed_trim": ev.get("passedTrimmed", ev.get("finishReason") == "auto"),
+        "passed_raw": ev.get("passedRaw"),
+        "partial_would_pass_trim": ev.get("partialWouldPassTrimmed") or ev.get("partialWouldPass"),
+        "hypothesis_with_partial_raw": ev.get("hypothesisWithPartialRaw") or ev.get("hypothesisWithPartial", ""),
+        "hypothesis_with_partial_trimmed": ev.get("hypothesisWithPartialTrimmed") or ev.get("hypothesisWithPartial", ""),
+        "partial_count": ev.get("partialCount"),
+        "final_count": ev.get("finalCount"),
+        "turn_duration_sec": round((ev.get("turnDurationMs") or 0) / 1000, 2),
+        "sm_resume_delay_ms": ev.get("smResumeDelayMs", 0),
+        "sm_error": ev.get("smError") or "",
+        "threshold_len": th.get("minLenRatio"),
+        "threshold_score": th.get("scoreThreshold"),
+        "threshold_tail": th.get("minTailScore"),
+    }
+
+    final_rows: list[dict] = []
+    for item in ev.get("timeline") or []:
+        if item.get("kind") != "final":
+            continue
+        m_raw = item.get("metricsRaw") or {}
+        m_trim = item.get("metricsTrimmed") or {}
+        final_rows.append({
+            "ts": ev.get("ts", ""),
+            "session_id": ev.get("sessionId", ""),
+            "role": ev.get("role", ""),
+            "seq_idx": ev.get("seqIdx"),
+            "actor_turn_index": ev.get("actorTurnIndex"),
+            "final_index": item.get("finalIndex"),
+            "t_ms": item.get("tMs"),
+            "segment_text": item.get("segmentText", ""),
+            "hypothesis_raw": item.get("hypothesisRaw", ""),
+            "hypothesis_trimmed": item.get("hypothesisTrimmed", ""),
+            "trim_words_skipped": item.get("trimWordsSkipped", 0),
+            "tail_raw": m_raw.get("tail"),
+            "score_raw": m_raw.get("score"),
+            "len_raw": m_raw.get("lenRatio"),
+            "tail_trim": m_trim.get("tail"),
+            "score_trim": m_trim.get("score"),
+            "len_trim": m_trim.get("lenRatio"),
+            "passed_raw": item.get("passedRaw"),
+            "passed_trim": item.get("passedTrimmed"),
+            "failed_gates_trim": _csv_join(item.get("failedGatesTrimmed") or []),
+        })
+    return turn_row, final_rows
 _FORBIDDEN_FILE_NAMES = frozenset({
     "id_rsa",
     "id_ecdsa",
@@ -131,6 +244,19 @@ class AppHandler(SimpleHTTPRequestHandler):
         with open(_EOS_LOG_FILE, "a", encoding="utf-8") as log_file:
             for event in events:
                 log_file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+        turn_rows: list[dict] = []
+        final_rows: list[dict] = []
+        for event in events:
+            if event.get("event") != "turn_end":
+                continue
+            turn_row, step_rows = _csv_rows_for_turn_end(event)
+            turn_rows.append(turn_row)
+            final_rows.extend(step_rows)
+        if turn_rows:
+            _append_csv_rows(_EOS_TURNS_CSV, _TURNS_CSV_HEADERS, turn_rows)
+        if final_rows:
+            _append_csv_rows(_EOS_FINALS_CSV, _FINALS_CSV_HEADERS, final_rows)
 
     def _handle_eos_log(self, raw_body: bytes) -> None:
         if len(raw_body) > _MAX_EOS_LOG_BODY:
