@@ -42,8 +42,18 @@ _TURNS_CSV_HEADERS = [
     "failed_gates_trim", "tail_margin_trim", "score_margin_trim", "len_margin_trim",
     "passed_trim", "passed_raw", "partial_would_pass_trim",
     "hypothesis_with_partial_raw", "hypothesis_with_partial_trimmed",
-    "partial_count", "final_count", "turn_duration_sec", "sm_resume_delay_ms",
+    "partial_count", "final_count", "eou_count", "sm_eou_silence_sec",
+    "last_eou_eligible", "last_eou_mode", "last_eou_matched_tail",
+    "turn_duration_sec", "sm_resume_delay_ms",
     "sm_error", "threshold_len", "threshold_score", "threshold_tail",
+]
+
+_EOU_SILENCE_CSV = os.path.join(_EOS_LOG_DIR, "eos-eou-silence.csv")
+_EOU_SILENCE_CSV_HEADERS = [
+    "ts", "session_id", "role", "seq_idx", "actor_turn_index", "eou_index", "t_ms",
+    "silence_trigger_sec", "eligible", "matched_tail_words", "ref_word_count",
+    "len_ratio", "coverage", "tail", "score",
+    "strict_passed", "relaxed_passed", "mode", "eou_ignore_reason", "significance",
 ]
 
 _FINALS_CSV_HEADERS = [
@@ -112,6 +122,11 @@ def _csv_rows_for_turn_end(ev: dict) -> tuple[dict, list[dict]]:
         "hypothesis_with_partial_trimmed": ev.get("hypothesisWithPartialTrimmed") or ev.get("hypothesisWithPartial", ""),
         "partial_count": ev.get("partialCount"),
         "final_count": ev.get("finalCount"),
+        "eou_count": ev.get("eouCount", 0),
+        "sm_eou_silence_sec": ev.get("smEouSilenceSec"),
+        "last_eou_eligible": (ev.get("lastEouEvaluation") or {}).get("eligible"),
+        "last_eou_mode": (ev.get("lastEouEvaluation") or {}).get("mode"),
+        "last_eou_matched_tail": (ev.get("lastEouEvaluation") or {}).get("matchedTailWords"),
         "turn_duration_sec": round((ev.get("turnDurationMs") or 0) / 1000, 2),
         "sm_resume_delay_ms": ev.get("smResumeDelayMs", 0),
         "sm_error": ev.get("smError") or "",
@@ -152,6 +167,36 @@ def _csv_rows_for_turn_end(ev: dict) -> tuple[dict, list[dict]]:
             "failed_gates_trim": _csv_join(item.get("failedGatesTrimmed") or []),
         })
     return turn_row, final_rows
+
+
+def _csv_rows_for_eou_periods(ev: dict) -> list[dict]:
+    rows: list[dict] = []
+    for period in ev.get("eouPeriods") or []:
+        rows.append({
+            "ts": ev.get("ts", ""),
+            "session_id": ev.get("sessionId", ""),
+            "role": ev.get("role", ""),
+            "seq_idx": ev.get("seqIdx"),
+            "actor_turn_index": ev.get("actorTurnIndex"),
+            "eou_index": period.get("eouIndex"),
+            "t_ms": period.get("tMs"),
+            "silence_trigger_sec": period.get("silenceTriggerSec"),
+            "eligible": period.get("eligible"),
+            "matched_tail_words": period.get("matchedTailWords"),
+            "ref_word_count": period.get("refWordCount"),
+            "len_ratio": period.get("lenRatio"),
+            "coverage": period.get("coverage"),
+            "tail": period.get("tail"),
+            "score": period.get("score"),
+            "strict_passed": period.get("strictPassed"),
+            "relaxed_passed": period.get("relaxedPassed"),
+            "mode": period.get("mode"),
+            "eou_ignore_reason": period.get("eouIgnoreReason"),
+            "significance": period.get("significance"),
+        })
+    return rows
+
+
 _FORBIDDEN_FILE_NAMES = frozenset({
     "id_rsa",
     "id_ecdsa",
@@ -257,16 +302,20 @@ class AppHandler(SimpleHTTPRequestHandler):
 
         turn_rows: list[dict] = []
         final_rows: list[dict] = []
+        eou_rows: list[dict] = []
         for event in events:
             if event.get("event") != "turn_end":
                 continue
             turn_row, step_rows = _csv_rows_for_turn_end(event)
             turn_rows.append(turn_row)
             final_rows.extend(step_rows)
+            eou_rows.extend(_csv_rows_for_eou_periods(event))
         if turn_rows:
             _append_csv_rows(_EOS_TURNS_CSV, _TURNS_CSV_HEADERS, turn_rows)
         if final_rows:
             _append_csv_rows(_EOS_FINALS_CSV, _FINALS_CSV_HEADERS, final_rows)
+        if eou_rows:
+            _append_csv_rows(_EOS_SILENCE_CSV, _EOU_SILENCE_CSV_HEADERS, eou_rows)
 
     def _handle_eos_log(self, raw_body: bytes) -> None:
         if len(raw_body) > _MAX_EOS_LOG_BODY:

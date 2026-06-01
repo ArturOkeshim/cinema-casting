@@ -4,6 +4,8 @@
  * конвертирует PCM-s16le при 16 kHz и стримит через WebSocket.
  */
 
+import { SM_RT_MAX_DELAY, SM_EOU_SILENCE_TRIGGER_SEC } from './eouPolicy.js';
+
 const RT_URL = 'wss://eu.rt.speechmatics.com/v2';
 
 function sleep(ms) {
@@ -36,15 +38,27 @@ function sanitizeAdditionalVocab(additionalVocab) {
     .filter(Boolean);
 }
 
-function buildStartPayload(apiKey, jwtToken, language, additionalVocab = []) {
+function buildStartPayload(
+  apiKey,
+  jwtToken,
+  language,
+  additionalVocab = [],
+  { maxDelay = SM_RT_MAX_DELAY, enableEou = true, eouSilenceSec = SM_EOU_SILENCE_TRIGGER_SEC } = {},
+) {
+  const transcription_config = {
+    language,
+    enable_partials: true,
+    max_delay: maxDelay,
+    operating_point: 'enhanced',
+  };
+  if (enableEou && eouSilenceSec > 0) {
+    transcription_config.conversation_config = {
+      end_of_utterance_silence_trigger: eouSilenceSec,
+    };
+  }
   const startPayload = {
     message: 'StartRecognition',
-    transcription_config: {
-      language,
-      enable_partials: true,
-      max_delay: 1,
-      operating_point: 'enhanced',
-    },
+    transcription_config,
     audio_format: {
       type: 'raw',
       encoding: 'pcm_s16le',
@@ -170,12 +184,15 @@ export class SpeechmaticsRecognizer {
     this._stream = stream;
     this.onPartial = onPartial ?? (() => {});
     this.onFinal = onFinal ?? (() => {});
+    this.onEndOfUtterance = () => {};
     this.onError = onError ?? console.error;
     this.onDebug = onDebug ?? (() => {});
     this._additionalVocab = sanitizeAdditionalVocab(additionalVocab);
     this._maxStartAttempts = maxStartAttempts;
     this._startAttemptDelayMs = startAttemptDelayMs;
     this._recognitionTimeoutMs = recognitionTimeoutMs;
+    this._enableEou = true;
+    this._eouSilenceSec = SM_EOU_SILENCE_TRIGGER_SEC;
     this._ws = null;
     this._ctx = null;
     this._processor = null;
@@ -232,7 +249,14 @@ export class SpeechmaticsRecognizer {
 
       ws.onopen = () => {
         this.onDebug('ws open');
-        ws.send(JSON.stringify(buildStartPayload(this._apiKey, this._jwtToken, this._language, this._additionalVocab)));
+        ws.send(
+        JSON.stringify(
+          buildStartPayload(this._apiKey, this._jwtToken, this._language, this._additionalVocab, {
+            enableEou: this._enableEou,
+            eouSilenceSec: this._eouSilenceSec,
+          }),
+        ),
+      );
       };
 
       ws.onmessage = (ev) => {
@@ -263,12 +287,21 @@ export class SpeechmaticsRecognizer {
           return;
         }
 
-        if (data?.message && data.message !== 'AddPartialTranscript' && data.message !== 'AddTranscript') {
+        if (
+          data?.message &&
+          data.message !== 'AddPartialTranscript' &&
+          data.message !== 'AddTranscript' &&
+          data.message !== 'EndOfUtterance'
+        ) {
           this.onDebug(`ws message: ${data.message}`);
         }
         if (data?.message === 'Error') {
           const details = data?.reason || data?.code || JSON.stringify(data);
           this.onError(new Error(`Speechmatics error: ${details}`));
+          return;
+        }
+        if (data.message === 'EndOfUtterance') {
+          this.onEndOfUtterance(data.metadata ?? {});
           return;
         }
         const text = data.metadata?.transcript?.trim();
@@ -366,6 +399,8 @@ export class PersistentSpeechmaticsSession {
    *   maxStartAttempts?: number,
    *   startAttemptDelayMs?: number,
    *   recognitionTimeoutMs?: number,
+   *   enableEou?: boolean,
+   *   eouSilenceSec?: number,
    * }} opts
    */
   constructor({
@@ -377,14 +412,19 @@ export class PersistentSpeechmaticsSession {
     maxStartAttempts = 4,
     startAttemptDelayMs = 900,
     recognitionTimeoutMs = 18000,
+    enableEou = true,
+    eouSilenceSec = SM_EOU_SILENCE_TRIGGER_SEC,
   }) {
     this._jwtToken = jwtToken ?? '';
     this._stream = stream;
     this._language = language;
     this._additionalVocab = sanitizeAdditionalVocab(additionalVocab);
+    this._enableEou = enableEou;
+    this._eouSilenceSec = eouSilenceSec;
     this.onDebug = onDebug ?? (() => {});
     this.onPartial = () => {};
     this.onFinal = () => {};
+    this.onEndOfUtterance = () => {};
     this.onError = console.error;
     this._maxStartAttempts = maxStartAttempts;
     this._startAttemptDelayMs = startAttemptDelayMs;
@@ -410,9 +450,10 @@ export class PersistentSpeechmaticsSession {
     this._additionalVocab = sanitizeAdditionalVocab(additionalVocab);
   }
 
-  setHandlers({ onPartial, onFinal, onError }) {
+  setHandlers({ onPartial, onFinal, onEndOfUtterance, onError }) {
     this.onPartial = onPartial ?? (() => {});
     this.onFinal = onFinal ?? (() => {});
+    this.onEndOfUtterance = onEndOfUtterance ?? (() => {});
     this.onError = onError ?? console.error;
   }
 
@@ -529,7 +570,14 @@ export class PersistentSpeechmaticsSession {
 
       ws.onopen = () => {
         this.onDebug('persistent ws open');
-        ws.send(JSON.stringify(buildStartPayload('', this._jwtToken, this._language, this._additionalVocab)));
+        ws.send(
+          JSON.stringify(
+            buildStartPayload('', this._jwtToken, this._language, this._additionalVocab, {
+              enableEou: this._enableEou,
+              eouSilenceSec: this._eouSilenceSec,
+            }),
+          ),
+        );
       };
 
       ws.onmessage = (ev) => {
@@ -568,12 +616,21 @@ export class PersistentSpeechmaticsSession {
           return;
         }
 
-        if (data?.message && data.message !== 'AddPartialTranscript' && data.message !== 'AddTranscript') {
+        if (
+          data?.message &&
+          data.message !== 'AddPartialTranscript' &&
+          data.message !== 'AddTranscript' &&
+          data.message !== 'EndOfUtterance'
+        ) {
           this.onDebug(`ws message: ${data.message}`);
         }
         if (data?.message === 'Error') {
           const details = data?.reason || data?.code || JSON.stringify(data);
           this.onError(new Error(`Speechmatics error: ${details}`));
+          return;
+        }
+        if (data.message === 'EndOfUtterance') {
+          this.onEndOfUtterance(data.metadata ?? {});
           return;
         }
         const text = data.metadata?.transcript?.trim();

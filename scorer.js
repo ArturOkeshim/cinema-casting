@@ -163,6 +163,31 @@ const TAIL_REF_WORDS = 4;
 /** Окно в гипотезе: с запасом под ошибки сегментации ASR. */
 const TAIL_HYP_WORDS = 10;
 
+/**
+ * Сколько слов из хвоста эталона (exact/fuzzy) встретилось в гипотезе.
+ * Для 1–2 слов эталона — вся строка считается хвостом.
+ */
+export function countMatchedTailWords(reference, hypothesis) {
+  const refWords = normalizeText(reference).split(' ').filter(Boolean);
+  if (refWords.length === 0) return 0;
+  const tailCount =
+    refWords.length <= 2 ? refWords.length : Math.min(TAIL_REF_WORDS, refWords.length);
+  const tailRef = refWords.slice(-tailCount);
+  const hypWords = normalizeText(hypothesis).split(' ').filter(Boolean);
+  const hypWindow = hypWords.slice(-Math.max(TAIL_HYP_WORDS, tailCount + 2));
+
+  let matched = 0;
+  for (const rw of tailRef) {
+    const found = hypWindow.some((hw) => {
+      if (rw === hw) return true;
+      if (rw.length < TAIL_WORD_MIN_LEN && hw.length < TAIL_WORD_MIN_LEN) return rw === hw;
+      return wordsMatchForTail(rw, hw);
+    });
+    if (found) matched += 1;
+  }
+  return matched;
+}
+
 const WEIGHT_COVERAGE = 0.1;
 const WEIGHT_FUZZY = 0.1;
 const WEIGHT_TAIL = 0.8;

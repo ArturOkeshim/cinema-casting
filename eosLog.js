@@ -5,7 +5,7 @@
 
 import { calcScore, MIN_TAIL_SCORE, trimHypothesisWithMeta } from './scorer.js';
 
-export const EOS_LOG_SCHEMA_VERSION = 2;
+export const EOS_LOG_SCHEMA_VERSION = 3;
 const MAX_TIMELINE = 40;
 const PARTIAL_THROTTLE_MS = 1000;
 
@@ -138,7 +138,14 @@ function baseEnvelope() {
   };
 }
 
-export function initEosLogSession({ role, actorLineCount, vocabCount, sequenceLength }) {
+export function initEosLogSession({
+  role,
+  actorLineCount,
+  vocabCount,
+  sequenceLength,
+  smEouEnabled = true,
+  smEouSilenceSec = 0.95,
+}) {
   sessionId = crypto.randomUUID();
   rehearsalRole = role || '';
   rehearsalStartMs = Date.now();
@@ -152,6 +159,8 @@ export function initEosLogSession({ role, actorLineCount, vocabCount, sequenceLe
       actorLineCount,
       vocabCount,
       sequenceLength,
+      smEouEnabled,
+      smEouSilenceSec,
     },
   ]);
 }
@@ -177,7 +186,60 @@ export function beginActorTurn({ seqIdx, speakableText, thresholds }) {
     bestNearMissRaw: { score: 0, tail: 0, lenRatio: 0, at: '', atTail: '', atLen: '' },
     smError: null,
     smResumeDelayMs: 0,
+    eouCount: 0,
+    eouPeriods: [],
+    lastEouEvaluation: null,
   };
+}
+
+/**
+ * Период тишины (EndOfUtterance от Speechmatics) внутри реплики актёра.
+ * @param {object} payload — результат evaluateActorTurnCompletion.detail + eouIndex
+ */
+export function recordEndOfUtterance(payload) {
+  if (!currentTurn) return;
+  currentTurn.eouCount += 1;
+  const eouIndex = currentTurn.eouCount;
+  const tMs = relMsSince(currentTurn.turnStartMs);
+
+  const period = {
+    eouIndex,
+    tMs,
+    silenceTriggerSec: payload.silenceTriggerSec,
+    eligible: payload.eligibility?.eligible ?? false,
+    matchedTailWords: payload.eligibility?.matchedTailWords ?? 0,
+    refWordCount: payload.eligibility?.refWordCount ?? 0,
+    lenRatio: payload.metrics?.lenRatio,
+    coverage: payload.metrics?.coverage,
+    tail: payload.metrics?.tail,
+    score: payload.metrics?.score,
+    strictPassed: payload.strictPassed ?? false,
+    strictFailedGates: payload.strictFailedGates ?? [],
+    relaxedPassed: payload.relaxedPassed ?? false,
+    relaxedFailedGates: payload.relaxedFailedGates ?? [],
+    mode: payload.mode,
+    eouIgnoreReason: payload.eouIgnoreReason ?? '',
+    significance: payload.significance,
+    wouldFinish: payload.mode === 'relaxed_eou' || payload.mode === 'strict',
+  };
+  currentTurn.eouPeriods.push(period);
+  currentTurn.lastEouEvaluation = period;
+
+  pushTimeline({
+    kind: 'eou',
+    eouIndex,
+    tMs,
+    eligible: period.eligible,
+    matchedTailWords: period.matchedTailWords,
+    lenRatio: period.lenRatio,
+    tail: period.tail,
+    score: period.score,
+    strictPassed: period.strictPassed,
+    relaxedPassed: period.relaxedPassed,
+    mode: period.mode,
+    eouIgnoreReason: period.eouIgnoreReason,
+    significance: period.significance,
+  });
 }
 
 export function noteActorSmResumeDelay(ms) {
@@ -277,6 +339,9 @@ export function getActorTurnSnapshot() {
     bestNearMissRaw: { ...t.bestNearMissRaw },
     smError: t.smError,
     smResumeDelayMs: t.smResumeDelayMs,
+    eouCount: t.eouCount,
+    eouPeriods: [...t.eouPeriods],
+    lastEouEvaluation: t.lastEouEvaluation ? { ...t.lastEouEvaluation } : null,
     turnDurationMs: relMsSince(t.turnStartMs),
     rehearsalDurationMs: relMsSince(rehearsalStartMs),
     tokenRefreshCount,
@@ -327,6 +392,10 @@ export function flushTurnEnd(payload) {
     smConnected,
     smResumeDelayMs,
     recordingBytes,
+    eouCount,
+    eouPeriods,
+    lastEouEvaluation,
+    smEouSilenceSec,
   } = payload;
 
   const line = {
@@ -369,6 +438,10 @@ export function flushTurnEnd(payload) {
     smConnected,
     smResumeDelayMs,
     recordingBytes,
+    eouCount: eouCount ?? 0,
+    eouPeriods: eouPeriods ?? [],
+    lastEouEvaluation: lastEouEvaluation ?? null,
+    smEouSilenceSec,
     /** Для обратной совместимости со старым Excel-скриптом */
     hypothesisFinal: hypothesisTrimmed,
     hypothesisWithPartial: hypothesisWithPartialTrimmed,

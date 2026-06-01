@@ -9,6 +9,7 @@ import {
   beginActorTurn,
   recordPartial,
   recordFinal,
+  recordEndOfUtterance,
   recordActorSmError,
   logSmTokenFail,
   logRehearsalEnd,
@@ -18,6 +19,11 @@ import {
   flushTurnEnd,
   scoreHypothesisPair,
 } from './eosLog.js';
+import {
+  evaluateActorTurnCompletion,
+  readEouTuningFromUrl,
+  SM_EOU_SILENCE_TRIGGER_SEC,
+} from './eouPolicy.js';
 
 initStageNav('rehearsal');
 
@@ -63,6 +69,9 @@ const actorRecordings = new Map();
 
 /** Ссылка на текущий skip-handler для последующего removeEventListener */
 let currentSkipHandler = null;
+
+/** Настройки End-of-Utterance (тишина ~1 с); ?noEou=1 — выкл., ?eouSilence=0.9 */
+const eouTuning = readEouTuningFromUrl();
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const actorBadgeEl   = document.getElementById('actorBadge');
@@ -546,7 +555,43 @@ function emitActorTurnLog(finishReason) {
     smConnected: Boolean(persistentSession),
     smResumeDelayMs: snap.smResumeDelayMs,
     recordingBytes: recordedChunks.reduce((n, c) => n + (c.size || 0), 0),
+    eouCount: snap.eouCount,
+    eouPeriods: snap.eouPeriods,
+    lastEouEvaluation: snap.lastEouEvaluation,
+    smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
   });
+}
+
+/**
+ * Strict pass на final; после EndOfUtterance — relaxed (см. eouPolicy.js).
+ * @param {'final'|'eou'} source
+ */
+function tryCompleteActorTurn(seqIdx, source, speakableText, thresholds) {
+  if (turnDone) return;
+  const snap = getActorTurnSnapshot();
+  if (!snap) return;
+
+  const hypRaw = finalSegments.join(' ').trim();
+  const result = evaluateActorTurnCompletion({
+    speakableText,
+    hypothesisRaw: hypRaw,
+    thresholds,
+    bestNearMissTrim: snap.bestNearMissTrim,
+    source,
+    eouIndex: snap.eouCount + (source === 'eou' ? 1 : 0),
+  });
+
+  if (source === 'eou') {
+    recordEndOfUtterance({
+      ...result.detail,
+      silenceTriggerSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    });
+  }
+
+  if (result.action === 'finish') {
+    setCurrentLineProgress(1);
+    finishActorTurn(seqIdx, result.finishReason);
+  }
 }
 
 // ── Реплика актёра ─────────────────────────────────────────────────────────
@@ -623,7 +668,7 @@ async function runActorStep(step, seqIdx) {
       const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
       if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
 
-      const { passed } = recordFinal(text.trim(), hypRaw, thresholds);
+      recordFinal(text.trim(), hypRaw, thresholds);
       const m = pair.metricsTrimmed;
       setCurrentLineProgress(
         calcActorLineProgress({
@@ -634,10 +679,11 @@ async function runActorStep(step, seqIdx) {
           minLenRatio,
         })
       );
-      if (passed) {
-        setCurrentLineProgress(1);
-        finishActorTurn(seqIdx, 'auto');
-      }
+      tryCompleteActorTurn(seqIdx, 'final', speakableText, thresholds);
+    },
+    onEndOfUtterance() {
+      if (turnDone || eouTuning.disableEou) return;
+      tryCompleteActorTurn(seqIdx, 'eou', speakableText, thresholds);
     },
     onError(e) {
       console.error('Persistent session error:', e);
@@ -766,6 +812,8 @@ async function startRecordingSession() {
     stream: micStream,
     language: 'ru',
     additionalVocab: sessionAdditionalVocab,
+    enableEou: !eouTuning.disableEou,
+    eouSilenceSec: eouTuning.silenceSec,
     onDebug: (msg) => console.debug('[sm]', msg),
   });
   persistentSession.setHandlers({
@@ -791,11 +839,18 @@ async function startRecordingSession() {
   persistentSession.pauseSending();
 
   const actorLineCount = sequence.filter((s) => s.type === 'actor').length;
+  console.info('[rehearsal] EoU', {
+    enabled: !eouTuning.disableEou,
+    silenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    defaultSec: SM_EOU_SILENCE_TRIGGER_SEC,
+  });
   initEosLogSession({
     role,
     actorLineCount,
     vocabCount: sessionAdditionalVocab.length,
     sequenceLength: sequence.length,
+    smEouEnabled: !eouTuning.disableEou,
+    smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
   });
 
   await showStartCountdown();
