@@ -44,7 +44,7 @@ const COUNTDOWN_STEP_MS = 1000;
  * Наушники: часто хватает 150–250 ms; колонки/комната: 400–700 ms.
  * Подбор на устройстве: rehearsal.html?smResumeDelay=500
  */
-const ACTOR_SM_RESUME_DELAY_MS = 450;
+const ACTOR_SM_RESUME_DELAY_MS = 150;
 const ACTOR_SM_RESUME_DELAY_MAX_MS = 2000;
 
 /** Неотслеживаемый «забыл вкладку» + экономия Speechmatics: лимит одной сессии с момента старта репетиции. */
@@ -65,7 +65,6 @@ const actorRecordings = new Map();
 let currentSkipHandler = null;
 
 // ── DOM ────────────────────────────────────────────────────────────────────
-const rehearsalView  = document.getElementById('rehearsalView');
 const actorBadgeEl   = document.getElementById('actorBadge');
 const stepCounterEl  = document.getElementById('stepCounter');
 const loadingSection = document.getElementById('loadingSection');
