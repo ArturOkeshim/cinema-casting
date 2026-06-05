@@ -1,6 +1,7 @@
 import { initStageNav } from "./stageNav.js";
 import { saveBlocks, saveScriptText, loadScriptText, clearRehearsalCursor, saveRole, savePartnerAudioReady } from "./flowState.js";
 import { clearAllSessionAudio } from "./audioDb.js";
+import { reachGoal } from "./analytics.js";
 
 const SKIP_SCRIPT_PERSIST_ONCE_KEY = 'cinemaCasting.skipScriptPersistOnce';
 const scriptInput = document.getElementById("scriptInput");
@@ -290,6 +291,7 @@ processBtn.addEventListener("click", async () => {
   try {
     saveScriptText(text);
     const blocks = await processScriptText(text);
+    reachGoal('script_processed', { blocks: blocks.length });
     setStatus(`Готово: найдено блоков — ${blocks.length}.`);
     window.location.href = "./blocks.html";
   } catch (error) {

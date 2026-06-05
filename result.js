@@ -2,11 +2,43 @@ import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor } from './flowState.js';
 import { getPartnerAudio, getActorRecording } from './audioDb.js';
 import { buildSequence, extractSpeakable, escapeHtml } from './rehearsalSequence.js';
+import { reachGoal } from './analytics.js';
 
 initStageNav('result');
 
+const FEEDBACK_TELEGRAM = 'artemmish';
+const FEEDBACK_LS_KEY = 'cinemaCasting.feedbackDraft';
+
 const playAllBtn = document.getElementById('playAllBtn');
 const resultListEl = document.getElementById('resultList');
+const feedbackInput = document.getElementById('feedbackInput');
+const feedbackTelegramBtn = document.getElementById('feedbackTelegramBtn');
+
+function buildTelegramFeedbackUrl(message) {
+  const text = [
+    'Фидбек по Cinema Casting (бета):',
+    message.trim() || 'Попробовал сервис, хочу поделиться впечатлениями.',
+  ].join('\n\n');
+  return `https://t.me/${FEEDBACK_TELEGRAM}?text=${encodeURIComponent(text)}`;
+}
+
+function initFeedbackForm() {
+  if (!feedbackInput) return;
+
+  const saved = localStorage.getItem(FEEDBACK_LS_KEY);
+  if (saved) feedbackInput.value = saved;
+
+  feedbackInput.addEventListener('input', () => {
+    localStorage.setItem(FEEDBACK_LS_KEY, feedbackInput.value);
+  });
+
+  feedbackTelegramBtn?.addEventListener('click', () => {
+    reachGoal('feedback_clicked');
+    window.open(buildTelegramFeedbackUrl(feedbackInput.value), '_blank', 'noopener,noreferrer');
+  });
+}
+
+initFeedbackForm();
 
 document.querySelector('.result-footer')?.addEventListener('click', (e) => {
   if (e.target.closest('#rehearseAgainBtn')) {
@@ -103,6 +135,8 @@ async function init() {
     });
     if (audios.length > 0) audios[0].play();
   };
+
+  reachGoal('result_viewed', { clips: items.length });
 }
 
 init();

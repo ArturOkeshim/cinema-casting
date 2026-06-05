@@ -200,17 +200,26 @@
 
     .btn-skip {
       border: none;
-      border-radius: 10px;
-      padding: 10px 16px;
+      border-radius: 12px;
+      padding: 14px 22px;
       cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      background: #374270;
-      color: #e7ecff;
+      font-size: 16px;
+      font-weight: 700;
+      background: #4f7cff;
+      color: #fff;
       margin-left: auto;
+      box-shadow: 0 8px 20px rgba(79, 124, 255, 0.28);
     }
 
-    .btn-skip:hover { background: #44548f; }
+    .btn-skip:hover { background: #6b94ff; }
+
+    .skip-hint {
+      margin: 14px 0 0;
+      text-align: center;
+      color: #8fa3d8;
+      font-size: 14px;
+      line-height: 1.45;
+    }
 
     .script-line__actions {
       display: none;
@@ -313,7 +322,7 @@
   <!-- ═══ Страница репетиции ═══ -->
   <main id="rehearsalView" class="layout">
     <section id="startGate" class="start-gate">
-      <p class="start-hint">Когда будете готовы, начните запись пробы</p>
+      <p class="start-hint">Когда будете готовы, начните запись пробы. Если авто-переход между репликами не сработает — нажмите «Дальше» или пробел.</p>
       <p id="startGateError" class="start-gate-error" hidden></p>
       <button type="button" id="startRehearsalBtn" class="btn-primary">Начать запись пробы</button>
     </section>
@@ -326,7 +335,8 @@
         <div id="scriptLane" class="script-lane"></div>
         <div id="scriptLive" class="script-live"></div>
       </section>
-      <button id="skipBtn" class="btn-skip" hidden>Дальше →</button>
+      <button id="skipBtn" class="btn-skip" hidden>Дальше → (Пробел)</button>
+      <p id="skipHint" class="skip-hint" hidden>Если авто-переход не сработал — нажмите «Дальше» или пробел</p>
       <section id="loadingSection" hidden>
         <p id="loadingText" class="loading-text">Загрузка…</p>
       </section>

@@ -99,6 +99,65 @@
       line-height: 1.5;
     }
 
+    .feedback-card {
+      margin-top: 32px;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px solid #2d3a67;
+      background: rgba(21, 27, 49, 0.92);
+    }
+
+    .feedback-card h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+
+    .feedback-card p {
+      margin: 0 0 14px;
+      color: #aebded;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .feedback-card textarea {
+      width: 100%;
+      min-height: 110px;
+      border-radius: 10px;
+      border: 1px solid #46588e;
+      background: #0e1430;
+      color: #f5f7ff;
+      font: inherit;
+      font-size: 15px;
+      line-height: 1.45;
+      padding: 12px 14px;
+      resize: vertical;
+      margin-bottom: 12px;
+    }
+
+    .feedback-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .feedback-actions .btn-secondary-outline {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      background: #2a355f;
+      color: #fff;
+      font-weight: 600;
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .feedback-actions .btn-secondary-outline:hover { background: #374270; }
+
     @media (max-width: 760px) {
       .layout {
         padding-inline: 12px;
@@ -124,6 +183,16 @@
       <button id="rehearseAgainBtn" type="button" class="btn-primary">Начать репетицию заново</button>
       <button id="rerecordPartnersBtn" type="button" class="btn-secondary-outline">Перезаписать реплики напарников</button>
     </div>
+
+    <section class="feedback-card">
+      <h2>Помогите улучшить бета-версию</h2>
+      <p>Расскажите, что понравилось, что неудобно и где авто-переход не сработал. Это очень поможет перед запуском для всех актёров.</p>
+      <textarea id="feedbackInput" placeholder="Например: на 3-й реплике не переключилось автоматически, пришлось жать пробел. Хотелось бы скачать готовую пробу одним файлом."></textarea>
+      <div class="feedback-actions">
+        <button id="feedbackTelegramBtn" type="button" class="btn-primary">Написать в Telegram</button>
+        <a id="feedbackTelegramLink" class="btn-secondary-outline" href="https://t.me/artemmish" target="_blank" rel="noopener noreferrer">Открыть @artemmish</a>
+      </div>
+    </section>
   </main>
 
   <script type="module" src="./result.js"></script>

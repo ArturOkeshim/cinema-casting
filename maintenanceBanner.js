@@ -1,3 +1,7 @@
+import { initMetrika } from './analytics.js';
+
+initMetrika();
+
 const BANNER_ID = 'maintenanceBanner';
 const TOGGLE_ID = 'maintenanceBannerToggle';
 const LS_HIDDEN_KEY = 'maintenanceBannerHidden';
@@ -9,21 +13,28 @@ if (!document.getElementById(BANNER_ID)) {
   banner.setAttribute('aria-live', 'polite');
   banner.innerHTML = `
     <button type="button" class="maintenance-banner__close" aria-label="Скрыть плашку">×</button>
-    <div class="maintenance-banner__title">Сервис в разработке</div>
+    <div class="maintenance-banner__title">
+      <span class="maintenance-banner__badge">Beta</span>
+      Cinema Casting — закрытое тестирование
+    </div>
     <div class="maintenance-banner__text">
-      Если что-то не работает или есть пожелания по функционалу, напишите:
+      Ищем первых актёров для бета-теста. Сервис бесплатный, без регистрации.
+      Авто-переход между репликами может работать нестабильно — используйте кнопку «Дальше» или пробел.
+    </div>
+    <div class="maintenance-banner__text maintenance-banner__text--compact">
+      Нашли баг или есть идея? Напишите:
     </div>
     <div class="maintenance-banner__contacts">
-      <a href="mailto:artem.mishchenko16@gmail.com">email: artem.mishchenko16@gmail.com</a>
-      <a href="https://t.me/artemmish" target="_blank" rel="noopener noreferrer">tg: @artemmish</a>
+      <a href="https://t.me/artemmish" target="_blank" rel="noopener noreferrer">Telegram: @artemmish</a>
+      <a href="mailto:artem.mishchenko16@gmail.com">artem.mishchenko16@gmail.com</a>
     </div>
   `;
 
   const toggleBtn = document.createElement('button');
   toggleBtn.id = TOGGLE_ID;
   toggleBtn.type = 'button';
-  toggleBtn.setAttribute('aria-label', 'Показать контакты');
-  toggleBtn.textContent = '✉';
+  toggleBtn.setAttribute('aria-label', 'Показать информацию о бете');
+  toggleBtn.textContent = 'β';
 
   const style = document.createElement('style');
   style.textContent = `
@@ -32,17 +43,17 @@ if (!document.getElementById(BANNER_ID)) {
       right: 12px;
       bottom: 12px;
       z-index: 3000;
-      width: min(360px, calc(100vw - 24px));
+      width: min(380px, calc(100vw - 24px));
       border: 1px solid rgba(103, 132, 209, 0.55);
       border-radius: 12px;
-      background: rgba(15, 22, 51, 0.92);
+      background: rgba(15, 22, 51, 0.94);
       color: #dbe7ff;
       box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38);
       backdrop-filter: blur(4px);
-      padding: 10px 12px;
+      padding: 12px 14px;
       font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
       font-size: 13px;
-      line-height: 1.35;
+      line-height: 1.4;
     }
 
     #${BANNER_ID}.is-hidden {
@@ -67,15 +78,38 @@ if (!document.getElementById(BANNER_ID)) {
     }
 
     #${BANNER_ID} .maintenance-banner__title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
       font-weight: 700;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       color: #eef4ff;
       padding-right: 20px;
+    }
+
+    #${BANNER_ID} .maintenance-banner__badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(79, 124, 255, 0.25);
+      border: 1px solid rgba(143, 179, 255, 0.45);
+      color: #b8d1ff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
     #${BANNER_ID} .maintenance-banner__text {
       color: #bfcef8;
       margin-bottom: 6px;
+    }
+
+    #${BANNER_ID} .maintenance-banner__text--compact {
+      margin-bottom: 4px;
+      font-size: 12px;
     }
 
     #${BANNER_ID} .maintenance-banner__contacts {
@@ -105,12 +139,13 @@ if (!document.getElementById(BANNER_ID)) {
       border: 1px solid rgba(103, 132, 209, 0.55);
       border-radius: 999px;
       background: rgba(15, 22, 51, 0.92);
-      color: #dbe7ff;
+      color: #b8d1ff;
       box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38);
       backdrop-filter: blur(4px);
       cursor: pointer;
       display: none;
-      font-size: 18px;
+      font-size: 16px;
+      font-weight: 800;
       line-height: 1;
     }
 

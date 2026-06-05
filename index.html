@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cinema Casting - Лендинг</title>
+  <title>Cinema Casting — самопробы без напарника</title>
   <style>
     :root {
       font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
@@ -49,6 +49,74 @@
       font-size: clamp(16px, 2vw, 20px);
       line-height: 1.45;
       color: #c9d4ff;
+    }
+
+    .beta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(143, 179, 255, 0.45);
+      background: rgba(79, 124, 255, 0.18);
+      color: #b8d1ff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .steps li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      color: #c9d4ff;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .steps li span {
+      flex: 0 0 28px;
+      height: 28px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(79, 124, 255, 0.22);
+      color: #dbe7ff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .beta-note {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(143, 179, 255, 0.28);
+      background: rgba(79, 124, 255, 0.1);
+      color: #aebded;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .demo-placeholder {
+      text-align: center;
+      color: #8fa3d8;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 28px 18px;
+      border: 1px dashed #3a4f86;
+      border-radius: 12px;
+      background: rgba(14, 20, 48, 0.55);
     }
 
     .card {
@@ -173,13 +241,33 @@
 <body>
   <main class="wrap">
     <section class="hero">
-      <h1>Записывайте топовые кинопробы без напарника -<br>быстро и удобно</h1>
-      <p class="lead">Получайте больше предложений на съемки, выделяясь на фоне остальных</p>
+      <div class="beta-badge">Закрытая бета · бесплатно · без регистрации</div>
+      <h1>Записывайте топовые кинопробы без напарника —<br>быстро и удобно</h1>
+      <p class="lead">Вставьте текст сцены. Сервис разберёт роли, зачитает реплики партнёров, а вы просто играете свою роль в браузере.</p>
+    </section>
+
+    <section class="card">
+      <h2>Как это работает</h2>
+      <ol class="steps">
+        <li><span>1</span>Вставьте текст диалога или сцены</li>
+        <li><span>2</span>Выберите свою роль и запишите реплики партнёров</li>
+        <li><span>3</span>Начните репетицию — система переключит реплики автоматически</li>
+        <li><span>4</span>Послушайте готовую пробу целиком</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Демо</h2>
+      <div class="demo-placeholder">
+        Скоро здесь будет короткое видео с примером записи пробы.<br>
+        Пока можно сразу попробовать на своём тексте — это бесплатно.
+      </div>
     </section>
 
     <section class="card">
       <h2>Вставьте текст пробы</h2>
-      <p>Подойдет диалог, сцена или фрагмент сценария. Сервис автоматически разделит текст по ролям</p>
+      <p>Подойдёт диалог, сцена или фрагмент сценария. Сервис автоматически разделит текст по ролям.</p>
+      <p class="beta-note">Бета-версия: авто-переход между репликами может работать нестабильно. На репетиции всегда можно нажать «Дальше» или пробел.</p>
       <textarea id="scriptInput" placeholder="Вставьте сюда текст сценария..." autocomplete="off"></textarea>
       <div class="actions">
         <button id="processBtn" type="button">Обработать</button>

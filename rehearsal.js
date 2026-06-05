@@ -24,6 +24,7 @@ import {
   readEouTuningFromUrl,
   SM_EOU_SILENCE_TRIGGER_SEC,
 } from './eouPolicy.js';
+import { reachGoal } from './analytics.js';
 
 initStageNav('rehearsal');
 
@@ -67,8 +68,9 @@ let turnDone       = false; // защита от двойного вызова f
 /** Записанные реплики актёра: seqIdx → Blob (кэш; дублируется в IndexedDB) */
 const actorRecordings = new Map();
 
-/** Ссылка на текущий skip-handler для последующего removeEventListener */
+/** Ссылки на skip-handlers для последующего removeEventListener */
 let currentSkipHandler = null;
+let currentSkipKeyHandler = null;
 
 /** Настройки End-of-Utterance (тишина ~1 с); ?noEou=1 — выкл., ?eouSilence=0.9 */
 const eouTuning = readEouTuningFromUrl();
@@ -87,6 +89,7 @@ const startGate = document.getElementById('startGate');
 const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
 const startRehearsalBtn = document.getElementById('startRehearsalBtn');
 const startGateErrorEl = document.getElementById('startGateError');
+const skipHintEl = document.getElementById('skipHint');
 
 /** Сохраняются в bootstrap, нужны в startRecordingSession (словарь). */
 let rehearsalBlocks = [];
@@ -168,6 +171,41 @@ function mountSkipButtonToActorLine(index) {
   host.appendChild(skipBtn);
 }
 
+function setSkipHintVisible(visible) {
+  if (skipHintEl) skipHintEl.hidden = !visible;
+}
+
+function unbindSkipHandlers() {
+  if (currentSkipHandler && skipBtn) {
+    skipBtn.removeEventListener('click', currentSkipHandler);
+  }
+  if (currentSkipKeyHandler) {
+    document.removeEventListener('keydown', currentSkipKeyHandler);
+  }
+  currentSkipHandler = null;
+  currentSkipKeyHandler = null;
+}
+
+function bindSkipHandlers(seqIdx) {
+  unbindSkipHandlers();
+  if (!skipBtn) return;
+
+  currentSkipHandler = () => {
+    if (!turnDone) finishActorTurn(seqIdx, 'manual');
+  };
+  currentSkipKeyHandler = (event) => {
+    if (turnDone || skipBtn.hidden) return;
+    if (event.code !== 'Space' && event.key !== ' ') return;
+    const tag = event.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
+    event.preventDefault();
+    finishActorTurn(seqIdx, 'manual');
+  };
+
+  skipBtn.addEventListener('click', currentSkipHandler);
+  document.addEventListener('keydown', currentSkipKeyHandler);
+}
+
 function applyScriptLineClasses(activeIdx) {
   if (!scriptLaneEl) return;
   const lines = scriptLaneEl.querySelectorAll('.script-line');
@@ -240,10 +278,8 @@ function startMaxDurationWatch() {
 function haltRehearsalDueToMaxDuration() {
   clearMaxDurationWatch();
   try {
-    if (currentSkipHandler) {
-      skipBtn.removeEventListener('click', currentSkipHandler);
-      currentSkipHandler = null;
-    }
+    unbindSkipHandlers();
+    setSkipHintVisible(false);
   } catch {
     /* ignore */
   }
@@ -463,6 +499,8 @@ async function advanceTo(idx) {
 // ── Партнёрский шаг ────────────────────────────────────────────────────────
 async function runPartnerStep(step) {
   hide(loadingSection);
+  unbindSkipHandlers();
+  setSkipHintVisible(false);
   if (skipBtn) skipBtn.hidden = true;
   setCurrentLineProgress(0);
   if (scriptLiveEl) scriptLiveEl.textContent = `Партнер говорит: ${stepToViewModel(step).text.slice(0, 180)}`;
@@ -616,21 +654,19 @@ async function runActorStep(step, seqIdx) {
     const ok = await ensureSmToken();
     if (!ok) {
       logSmTokenFail(seqIdx, 'empty token');
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Готово» вручную.';
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Дальше» или пробел.';
       return;
     }
     await maybeReconnectPersistentIfTokenStale();
   } catch (e) {
     console.error('Failed to refresh Speechmatics token:', e);
     logSmTokenFail(seqIdx, String(e));
-    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Готово» вручную.';
+    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Дальше» или пробел.';
     return;
   }
 
-  // Skip-кнопка — ручное завершение реплики
-  if (currentSkipHandler) skipBtn.removeEventListener('click', currentSkipHandler);
-  currentSkipHandler = () => { if (!turnDone) finishActorTurn(seqIdx, 'manual'); };
-  skipBtn.addEventListener('click', currentSkipHandler);
+  bindSkipHandlers(seqIdx);
+  setSkipHintVisible(true);
 
   // MediaRecorder — запись реплики актёра
   const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
@@ -688,7 +724,7 @@ async function runActorStep(step, seqIdx) {
     onError(e) {
       console.error('Persistent session error:', e);
       recordActorSmError(String(e));
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Дальше» или пробел.';
     },
   });
 
@@ -708,10 +744,8 @@ function finishActorTurn(seqIdx, finishReason = 'manual') {
   emitActorTurnLog(finishReason);
   turnDone = true;
 
-  if (currentSkipHandler) {
-    skipBtn.removeEventListener('click', currentSkipHandler);
-    currentSkipHandler = null;
-  }
+  unbindSkipHandlers();
+  setSkipHintVisible(false);
 
   if (scriptLiveEl) scriptLiveEl.textContent = '✓ Готово';
   setCurrentLineProgress(1);
@@ -744,6 +778,7 @@ function finishActorTurn(seqIdx, finishReason = 'manual') {
 
 /** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
 function finishRehearsalAndGoToResult() {
+  reachGoal('rehearsal_completed');
   logRehearsalEnd({ completed: true, cursor: sequence.length });
   clearMaxDurationWatch();
   stopLineProgress();
@@ -781,6 +816,7 @@ async function startRecordingSession() {
   hide(startGate);
   show(rehearsalActiveUi);
   showLoading('Инициализация…');
+  reachGoal('rehearsal_started');
 
   try {
     const ok = await ensureSmToken();
