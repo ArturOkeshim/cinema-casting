@@ -145,6 +145,7 @@ export function initEosLogSession({
   sequenceLength,
   smEouEnabled = true,
   smEouSilenceSec = 0.95,
+  eosAlgoMode = 'v1',
 }) {
   sessionId = crypto.randomUUID();
   rehearsalRole = role || '';
@@ -161,6 +162,7 @@ export function initEosLogSession({
       sequenceLength,
       smEouEnabled,
       smEouSilenceSec,
+      eosAlgoMode,
     },
   ]);
 }
@@ -189,7 +191,18 @@ export function beginActorTurn({ seqIdx, speakableText, thresholds }) {
     eouCount: 0,
     eouPeriods: [],
     lastEouEvaluation: null,
+    peakLenRatioTrim: 0,
   };
+}
+
+/** v2: лучшая доля длины (trim) за ход — partial может «откатиться». */
+export function notePeakLenRatioTrim(lenRatioTrim) {
+  if (!currentTurn) return;
+  const v = Number(lenRatioTrim);
+  if (!Number.isFinite(v)) return;
+  if (v > (currentTurn.peakLenRatioTrim || 0)) {
+    currentTurn.peakLenRatioTrim = v;
+  }
 }
 
 /**
@@ -220,7 +233,10 @@ export function recordEndOfUtterance(payload) {
     mode: payload.mode,
     eouIgnoreReason: payload.eouIgnoreReason ?? '',
     significance: payload.significance,
-    wouldFinish: payload.mode === 'relaxed_eou' || payload.mode === 'strict',
+    wouldFinish:
+      payload.mode === 'relaxed_eou' ||
+      payload.mode === 'strict' ||
+      payload.mode === 'v2_pass',
   };
   currentTurn.eouPeriods.push(period);
   currentTurn.lastEouEvaluation = period;
@@ -346,6 +362,7 @@ export function getActorTurnSnapshot() {
     rehearsalDurationMs: relMsSince(rehearsalStartMs),
     tokenRefreshCount,
     lastPartialText: t.lastPartialText,
+    peakLenRatioTrim: t.peakLenRatioTrim ?? 0,
   };
 }
 
@@ -396,12 +413,16 @@ export function flushTurnEnd(payload) {
     eouPeriods,
     lastEouEvaluation,
     smEouSilenceSec,
+    eosAlgoMode,
+    peakLenRatioTrim,
   } = payload;
 
   const line = {
     ...baseEnvelope(),
     event: 'turn_end',
     finishReason,
+    eosAlgoMode: eosAlgoMode || 'v1',
+    peakLenRatioTrim: peakLenRatioTrim ?? 0,
     seqIdx,
     actorTurnIndex,
     speakableText,

@@ -18,12 +18,20 @@ import {
   getActorTurnSnapshot,
   flushTurnEnd,
   scoreHypothesisPair,
+  notePeakLenRatioTrim,
 } from './eosLog.js';
 import {
   evaluateActorTurnCompletion,
   readEouTuningFromUrl,
   SM_EOU_SILENCE_TRIGGER_SEC,
 } from './eouPolicy.js';
+import {
+  evaluateActorTurnCompletionV2,
+  adaptiveMinLenRatioV2,
+  computeLenRatioV2,
+  refWordCount,
+} from './eouPolicyV2.js';
+import { isEosV2, resolveEosAlgoMode } from './eosConfig.js';
 import { reachGoal } from './analytics.js';
 
 initStageNav('rehearsal');
@@ -253,6 +261,11 @@ function calcActorLineProgress({
   const tailPart = Math.max(0, Math.min(1, tail / Math.max(MIN_TAIL_SCORE, 0.0001)));
   // Композитный прогресс: смысловое совпадение важнее, длина и хвост стабилизируют оценку.
   return 0.55 * scorePart + 0.25 * lenPart + 0.2 * tailPart;
+}
+
+/** v2: прогресс = доля длины относительно адаптивного порога. */
+function calcActorLineProgressV2(lenRatio, minLenRatio) {
+  return Math.max(0, Math.min(1, lenRatio / Math.max(minLenRatio, 0.0001)));
 }
 
 function show(el) { el.hidden = false; }
@@ -597,17 +610,46 @@ function emitActorTurnLog(finishReason) {
     eouPeriods: snap.eouPeriods,
     lastEouEvaluation: snap.lastEouEvaluation,
     smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    eosAlgoMode: resolveEosAlgoMode(),
+    peakLenRatioTrim: snap.peakLenRatioTrim ?? 0,
   });
 }
 
 /**
- * Strict pass на final; после EndOfUtterance — relaxed (см. eouPolicy.js).
+ * v1: strict на final + relaxed на EoU. v2: только EoU + доля длины (eouPolicyV2.js).
  * @param {'final'|'eou'} source
  */
 function tryCompleteActorTurn(seqIdx, source, speakableText, thresholds) {
   if (turnDone) return;
   const snap = getActorTurnSnapshot();
   if (!snap) return;
+
+  if (isEosV2()) {
+    if (source !== 'eou') return;
+
+    const hypRaw = snap.lastPartialText
+      ? `${finalSegments.join(' ')} ${snap.lastPartialText}`.trim()
+      : finalSegments.join(' ').trim();
+
+    const result = evaluateActorTurnCompletionV2({
+      speakableText,
+      hypothesisRaw: hypRaw,
+      peakLenRatioTrim: snap.peakLenRatioTrim ?? 0,
+      source: 'eou',
+      eouIndex: snap.eouCount + 1,
+    });
+
+    recordEndOfUtterance({
+      ...result.detail,
+      silenceTriggerSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    });
+
+    if (result.action === 'finish') {
+      setCurrentLineProgress(1);
+      finishActorTurn(seqIdx, result.finishReason);
+    }
+    return;
+  }
 
   const hypRaw = finalSegments.join(' ').trim();
   const result = evaluateActorTurnCompletion({
@@ -646,8 +688,13 @@ async function runActorStep(step, seqIdx) {
   recordedChunks = [];
   turnDone = false;
 
-  const { minLenRatio, scoreThreshold } = adaptiveThresholds(speakableText);
-  const thresholds = { minLenRatio, scoreThreshold };
+  const refWords = refWordCount(speakableText);
+  const thresholds = isEosV2()
+    ? { minLenRatio: adaptiveMinLenRatioV2(refWords), scoreThreshold: 0, eosMode: 'v2' }
+    : (() => {
+        const { minLenRatio, scoreThreshold } = adaptiveThresholds(speakableText);
+        return { minLenRatio, scoreThreshold, eosMode: 'v1' };
+      })();
   beginActorTurn({ seqIdx, speakableText, thresholds });
 
   try {
@@ -683,6 +730,22 @@ async function runActorStep(step, seqIdx) {
     onPartial(text) {
       const hypRaw = `${finalSegments.join(' ')} ${text}`.trim();
       if (!hypRaw) return;
+
+      if (isEosV2()) {
+        const lenPack = computeLenRatioV2(speakableText, hypRaw);
+        notePeakLenRatioTrim(lenPack.lenRatioTrim);
+        if (scriptLiveEl) {
+          scriptLiveEl.textContent = `Live: ${lenPack.hypothesisTrimmed}`;
+        }
+        recordPartial(text, hypRaw, thresholds);
+        const snap = getActorTurnSnapshot();
+        const effectiveLen = Math.max(snap?.peakLenRatioTrim ?? 0, lenPack.lenRatioTrim);
+        setCurrentLineProgress(
+          calcActorLineProgressV2(effectiveLen, thresholds.minLenRatio)
+        );
+        return;
+      }
+
       const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
       if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
       recordPartial(text, hypRaw, thresholds);
@@ -692,8 +755,8 @@ async function runActorStep(step, seqIdx) {
           score: m.score,
           lenRatio: m.lenRatio,
           tail: m.tail,
-          scoreThreshold,
-          minLenRatio,
+          scoreThreshold: thresholds.scoreThreshold,
+          minLenRatio: thresholds.minLenRatio,
         })
       );
     },
@@ -701,6 +764,20 @@ async function runActorStep(step, seqIdx) {
       if (turnDone) return;
       finalSegments.push(text.trim());
       const hypRaw = finalSegments.join(' ');
+
+      if (isEosV2()) {
+        const lenPack = computeLenRatioV2(speakableText, hypRaw);
+        notePeakLenRatioTrim(lenPack.lenRatioTrim);
+        if (scriptLiveEl) scriptLiveEl.textContent = `Live: ${lenPack.hypothesisTrimmed}`;
+        recordFinal(text.trim(), hypRaw, thresholds);
+        const snap = getActorTurnSnapshot();
+        const effectiveLen = Math.max(snap?.peakLenRatioTrim ?? 0, lenPack.lenRatioTrim);
+        setCurrentLineProgress(
+          calcActorLineProgressV2(effectiveLen, thresholds.minLenRatio)
+        );
+        return;
+      }
+
       const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
       if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
 
@@ -711,8 +788,8 @@ async function runActorStep(step, seqIdx) {
           score: m.score,
           lenRatio: m.lenRatio,
           tail: m.tail,
-          scoreThreshold,
-          minLenRatio,
+          scoreThreshold: thresholds.scoreThreshold,
+          minLenRatio: thresholds.minLenRatio,
         })
       );
       tryCompleteActorTurn(seqIdx, 'final', speakableText, thresholds);
@@ -875,8 +952,10 @@ async function startRecordingSession() {
   persistentSession.pauseSending();
 
   const actorLineCount = sequence.filter((s) => s.type === 'actor').length;
-  console.info('[rehearsal] EoU', {
-    enabled: !eouTuning.disableEou,
+  const eosAlgoMode = resolveEosAlgoMode();
+  console.info('[rehearsal] EOS', {
+    algo: eosAlgoMode,
+    eouEnabled: !eouTuning.disableEou,
     silenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
     defaultSec: SM_EOU_SILENCE_TRIGGER_SEC,
   });
@@ -887,6 +966,7 @@ async function startRecordingSession() {
     sequenceLength: sequence.length,
     smEouEnabled: !eouTuning.disableEou,
     smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    eosAlgoMode,
   });
 
   await showStartCountdown();
