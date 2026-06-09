@@ -19,7 +19,6 @@ if (!document.getElementById(BANNER_ID)) {
     </div>
     <div class="maintenance-banner__text">
       Ищем первых актёров для бета-теста. Сервис бесплатный, без регистрации.
-      Авто-переход между репликами может работать нестабильно — используйте кнопку «Дальше» или пробел.
     </div>
     <div class="maintenance-banner__text maintenance-banner__text--compact">
       Нашли баг или есть идея? Напишите:

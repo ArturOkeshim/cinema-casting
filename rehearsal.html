@@ -306,6 +306,18 @@
       margin-bottom: 0;
     }
 
+    .rehearsal-beta-notice {
+      margin: 0 0 20px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(143, 179, 255, 0.28);
+      background: rgba(79, 124, 255, 0.1);
+      color: #aebded;
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
     @media (max-width: 760px) {
       .layout {
         padding-inline: 12px;
@@ -321,8 +333,9 @@
 
   <!-- ═══ Страница репетиции ═══ -->
   <main id="rehearsalView" class="layout">
+    <p class="rehearsal-beta-notice">Бета-версия: авто-переход между репликами может работать нестабильно. Если не сработал — нажмите «Дальше» или пробел.</p>
     <section id="startGate" class="start-gate">
-      <p class="start-hint">Когда будете готовы, начните запись пробы. Если авто-переход между репликами не сработает — нажмите «Дальше» или пробел.</p>
+      <p class="start-hint">Когда будете готовы, начните запись пробы</p>
       <p id="startGateError" class="start-gate-error" hidden></p>
       <button type="button" id="startRehearsalBtn" class="btn-primary">Начать запись пробы</button>
     </section>

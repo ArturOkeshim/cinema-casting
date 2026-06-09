@@ -1,5 +1,5 @@
 /** Подставь ID счётчика из Яндекс.Метрики. Пока пусто — скрипт не грузится. */
-export const YANDEX_METRIKA_ID = '';
+export const YANDEX_METRIKA_ID = '109741782';
 
 let metrikaReady = false;
 
