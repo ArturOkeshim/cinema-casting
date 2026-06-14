@@ -12,8 +12,8 @@ import {
 import { computeGateStatus, scoreHypothesisPair } from './eosLog.js';
 
 /** max_delay должен быть > end_of_utterance_silence_trigger (~1 с паузы). */
-export const SM_RT_MAX_DELAY = 1.15;
-export const SM_EOU_SILENCE_TRIGGER_SEC = 0.95;
+export const SM_RT_MAX_DELAY = 0.8;
+export const SM_EOU_SILENCE_TRIGGER_SEC = 0.6;
 
 export function speechmaticsConversationConfig() {
   return {
