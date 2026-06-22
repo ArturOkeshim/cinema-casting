@@ -223,10 +223,6 @@ function renderSegments(segments) {
     .map(
       (seg) => `
       <div class="segment" data-id="${seg.id}">
-        <div class="segment-header">
-          <span class="segment-number">Сегмент ${seg.id + 1} · ${seg.lines.length} ${seg.lines.length === 1 ? "реплика" : "реплики"}</span>
-          <span class="segment-status pending">Ожидает записи</span>
-        </div>
         <div class="lines">
           ${seg.lines
             .map(
