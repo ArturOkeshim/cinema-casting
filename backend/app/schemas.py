@@ -7,10 +7,13 @@ class RegisterBody(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value:str) -> str:
-        if len(value) <8:
-            raise ValueError("Password must be at least 8 characters")
+        if len(value) < 8:
+            raise ValueError("Пароль должен быть не короче 8 символов.")
+        if len(value.encode("utf-8")) > 72:
+            # bcrypt хранит только первые 72 байта. Длиннее — лучше отказать, чем обрезать пароль молча.
+            raise ValueError("Пароль должен быть не длиннее 72 символов.")
         if not any(ch.isdigit() for ch in value):
-            raise ValueError("Password must contain at least one digit")
+            raise ValueError("Пароль должен содержать хотя бы одну цифру.")
         return value
 
 class LoginBody(BaseModel):

@@ -207,7 +207,7 @@ export function initStageNav(current, opts = {}) {
       .auth-modal-overlay {
         position: fixed;
         inset: 0;
-        z-index: 2200;
+        z-index: 4000;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -263,6 +263,14 @@ export function initStageNav(current, opts = {}) {
         color: #e7ecff;
         padding: 10px 12px;
         font-size: 14px;
+      }
+      .auth-password-hint {
+        margin: -4px 0 10px;
+        color: #9aa6d6;
+        font-size: 12px;
+      }
+      .auth-password-hint[hidden] {
+        display: none !important;
       }
       .auth-submit-btn {
         border: 1px solid #4f7cff;
@@ -559,6 +567,7 @@ export function initStageNav(current, opts = {}) {
           <input id="authEmailInput" type="email" class="auth-input" autocomplete="email" />
           <label class="auth-label" for="authPasswordInput">Пароль</label>
           <input id="authPasswordInput" type="password" class="auth-input" autocomplete="current-password" />
+          <p class="auth-password-hint" hidden>Минимум 8 символов и хотя бы одна цифра.</p>
           <button type="button" class="auth-submit-btn">Войти</button>
           <p class="auth-register-hint">Нет аккаунта?</p>
           <button type="button" class="auth-register-btn">Перейти к регистрации</button>
@@ -588,6 +597,7 @@ export function initStageNav(current, opts = {}) {
   const authSubmitBtn = authModal.querySelector('.auth-submit-btn');
   const authHintEl = authModal.querySelector('.auth-register-hint');
   const authRegisterBtn = authModal.querySelector('.auth-register-btn');
+  const authPasswordHintEl = authModal.querySelector('.auth-password-hint');
   const authErrorEl = authModal.querySelector('.auth-error');
   let authMode = 'login';
   const setAuthMode = (mode) => {
@@ -597,6 +607,12 @@ export function initStageNav(current, opts = {}) {
     if (authSubmitBtn) authSubmitBtn.textContent = isRegister ? 'Зарегистрироваться' : 'Войти';
     if (authHintEl) authHintEl.textContent = isRegister ? 'Уже есть аккаунт?' : 'Нет аккаунта?';
     if (authRegisterBtn) authRegisterBtn.textContent = isRegister ? 'Перейти ко входу' : 'Перейти к регистрации';
+    if (authPasswordInput) {
+      // ЗАМЕТКА ДЛЯ ОБУЧЕНИЯ: autocomplete подсказывает браузеру, какой пароль предлагать.
+      // new-password — придумать новый, current-password — подставить уже сохранённый.
+      authPasswordInput.autocomplete = isRegister ? 'new-password' : 'current-password';
+    }
+    if (authPasswordHintEl) authPasswordHintEl.hidden = !isRegister;
     if (authErrorEl) {
       authErrorEl.hidden = true;
       authErrorEl.textContent = '';
@@ -654,7 +670,45 @@ export function initStageNav(current, opts = {}) {
     const details = Array.isArray(payload?.detail) ? payload.detail : [];
     if (!details.length) return 'Проверьте введенные данные.';
     const first = details[0];
-    return String(first?.msg || first?.message || 'Проверьте введенные данные.');
+    let message = String(first?.msg || first?.message || 'Проверьте введенные данные.');
+    // Pydantic добавляет этот префикс к тексту из ValueError. Пользователю он не нужен.
+    const pydanticPrefix = 'Value error, ';
+    if (message.startsWith(pydanticPrefix)) {
+      message = message.slice(pydanticPrefix.length);
+    }
+    if (message.toLowerCase().includes('email')) {
+      return 'Введите корректный email.';
+    }
+    return message;
+  };
+  const getEmailProblem = (email) => {
+    const atIndex = email.indexOf('@');
+    if (atIndex <= 0) return 'Введите корректный email.';
+    const domainPart = email.slice(atIndex + 1);
+    if (!domainPart.includes('.')) return 'Введите корректный email.';
+    if (domainPart.startsWith('.') || domainPart.endsWith('.')) {
+      return 'Введите корректный email.';
+    }
+    return '';
+  };
+  const getRegisterPasswordError = (password) => {
+    if (password.length < 8) {
+      return 'Пароль должен быть не короче 8 символов.';
+    }
+    if (password.length > 72) {
+      return 'Пароль должен быть не длиннее 72 символов.';
+    }
+    let hasDigit = false;
+    for (const character of password) {
+      if (character >= '0' && character <= '9') {
+        hasDigit = true;
+        break;
+      }
+    }
+    if (!hasDigit) {
+      return 'Пароль должен содержать хотя бы одну цифру.';
+    }
+    return '';
   };
   const fetchCurrentUserEmail = async (token) => {
     const response = await fetch(getAuthUrl('/me'), {
@@ -686,7 +740,7 @@ export function initStageNav(current, opts = {}) {
     const password = String(authPasswordInput?.value || '');
     if (!email || !password) {
       showAuthError('Введите email и пароль.');
-      return;
+      return false;
     }
     if (authErrorEl) {
       authErrorEl.hidden = true;
@@ -717,8 +771,15 @@ export function initStageNav(current, opts = {}) {
       setAuthUiState(true, userEmail);
       if (authPasswordInput) authPasswordInput.value = '';
       closeAuthModal();
+      return true;
     } catch (error) {
-      showAuthError(error instanceof Error ? error.message : 'Ошибка входа.');
+      const rawMessage = error instanceof Error ? error.message : '';
+      if (rawMessage === 'Failed to fetch') {
+        showAuthError('Нет связи с сервером. Проверьте, что он запущен.');
+      } else {
+        showAuthError(rawMessage || 'Ошибка входа.');
+      }
+      return false;
     } finally {
       if (authSubmitBtn) authSubmitBtn.disabled = false;
     }
@@ -728,6 +789,16 @@ export function initStageNav(current, opts = {}) {
     const password = String(authPasswordInput?.value || '');
     if (!email || !password) {
       showAuthError('Введите email и пароль.');
+      return;
+    }
+    const emailProblem = getEmailProblem(email);
+    if (emailProblem) {
+      showAuthError(emailProblem);
+      return;
+    }
+    const passwordError = getRegisterPasswordError(password);
+    if (passwordError) {
+      showAuthError(passwordError);
       return;
     }
     if (authErrorEl) {
@@ -756,12 +827,23 @@ export function initStageNav(current, opts = {}) {
         }
         throw new Error(`Ошибка регистрации: HTTP ${registerResponse.status}`);
       }
+      // Аккаунт уже в базе. Входим теми же данными, чтобы не просить пароль второй раз.
+      const loggedIn = await handleLogin();
+      if (loggedIn) return;
+      const loginErrorText = String(authErrorEl?.textContent || '').trim();
       setAuthMode('login');
-      if (authPasswordInput) authPasswordInput.value = '';
-      showAuthError('Регистрация успешна. Теперь войдите.');
-      if (authErrorEl) authErrorEl.hidden = false;
+      if (loginErrorText) {
+        showAuthError(`Аккаунт создан. ${loginErrorText}`);
+      } else {
+        showAuthError('Аккаунт создан, но войти не удалось. Нажмите «Войти».');
+      }
     } catch (error) {
-      showAuthError(error instanceof Error ? error.message : 'Ошибка регистрации.');
+      const rawMessage = error instanceof Error ? error.message : '';
+      if (rawMessage === 'Failed to fetch') {
+        showAuthError('Нет связи с сервером. Проверьте, что он запущен.');
+      } else {
+        showAuthError(rawMessage || 'Ошибка регистрации.');
+      }
     } finally {
       if (authSubmitBtn) authSubmitBtn.disabled = false;
     }

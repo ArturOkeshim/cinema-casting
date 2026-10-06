@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
 
-from passlib.context import CryptContext
 from pathlib import Path
+import bcrypt
 from sqlalchemy import select, text
 from jose import jwt, JWTError
 import time
@@ -34,7 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 # Simple in-memory login rate limiter.
@@ -74,6 +73,19 @@ def _clear_failed_logins(key: str) -> None:
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def hash_password(plain_password: str) -> str:
+    # passlib с bcrypt 4.3 падает при хешировании, поэтому вызываем библиотеку напрямую.
+    password_bytes = plain_password.encode("utf-8")
+    hashed_bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
+    return hashed_bytes.decode("utf-8")
+
+
+def password_is_correct(plain_password: str, password_hash: str) -> bool:
+    password_bytes = plain_password.encode("utf-8")
+    hash_bytes = password_hash.encode("utf-8")
+    return bcrypt.checkpw(password_bytes, hash_bytes)
 
 def _create_speechmatics_rt_token(api_key: str) -> str:
     req = request.Request(
@@ -149,7 +161,7 @@ def register(body: RegisterBody):
 
         user = User(
             email=normalized_email,
-            password_hash=pwd_context.hash(body.password),
+            password_hash=hash_password(body.password),
         )
 
         db.add(user)
@@ -175,7 +187,7 @@ def login(body: LoginBody, request: Request):
             _register_failed_login(rate_limit_key)
             raise HTTPException(status_code=401, detail="Invalid email or password")
         
-        if not pwd_context.verify(body.password, user.password_hash):
+        if not password_is_correct(body.password, user.password_hash):
             _register_failed_login(rate_limit_key)
             raise HTTPException(status_code=401, detail="Invalid email or password")
         
