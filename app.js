@@ -1,7 +1,9 @@
 import { initStageNav } from "./stageNav.js";
 import { saveBlocks, saveScriptText, loadScriptText, clearRehearsalCursor, saveRole, savePartnerAudioReady } from "./flowState.js";
 import { clearAllSessionAudio } from "./audioDb.js";
+import { reachGoal } from "./analytics.js";
 
+const SKIP_SCRIPT_PERSIST_ONCE_KEY = 'cinemaCasting.skipScriptPersistOnce';
 const scriptInput = document.getElementById("scriptInput");
 const processBtn = document.getElementById("processBtn");
 const status = document.getElementById("status");
@@ -9,17 +11,32 @@ const loadingScreen = document.getElementById("loadingScreen");
 
 initStageNav("script");
 
-const savedScript = loadScriptText();
-if (savedScript) {
-  scriptInput.value = savedScript;
+function syncScriptInputFromStorage() {
+  scriptInput.value = loadScriptText();
 }
+
+syncScriptInputFromStorage();
+window.addEventListener("pageshow", () => {
+  // При возврате из bfcache (часто на мобильных) обновляем поле из актуального storage.
+  syncScriptInputFromStorage();
+});
 
 let scriptPersistTimer = null;
 scriptInput.addEventListener("input", () => {
   if (scriptPersistTimer) clearTimeout(scriptPersistTimer);
   scriptPersistTimer = setTimeout(() => saveScriptText(scriptInput.value), 400);
 });
-window.addEventListener("beforeunload", () => saveScriptText(scriptInput.value));
+window.addEventListener("beforeunload", () => {
+  try {
+    if (sessionStorage.getItem(SKIP_SCRIPT_PERSIST_ONCE_KEY) === '1') {
+      sessionStorage.removeItem(SKIP_SCRIPT_PERSIST_ONCE_KEY);
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  saveScriptText(scriptInput.value);
+});
 
 function setStatus(text) {
   if (!status) {
@@ -274,6 +291,7 @@ processBtn.addEventListener("click", async () => {
   try {
     saveScriptText(text);
     const blocks = await processScriptText(text);
+    reachGoal('script_processed', { blocks: blocks.length });
     setStatus(`Готово: найдено блоков — ${blocks.length}.`);
     window.location.href = "./blocks.html";
   } catch (error) {

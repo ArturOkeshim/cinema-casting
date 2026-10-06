@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cinema Casting - Лендинг</title>
+  <link rel="canonical" href="https://fastroles.ru/">
+  <title>Cinema Casting — самопробы без напарника</title>
   <style>
     :root {
       font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
@@ -49,6 +50,48 @@
       font-size: clamp(16px, 2vw, 20px);
       line-height: 1.45;
       color: #c9d4ff;
+    }
+
+
+    .steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .steps li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      color: #c9d4ff;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .steps li span {
+      flex: 0 0 28px;
+      height: 28px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(79, 124, 255, 0.22);
+      color: #dbe7ff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .demo-placeholder {
+      text-align: center;
+      color: #8fa3d8;
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 28px 18px;
+      border: 1px dashed #3a4f86;
+      border-radius: 12px;
+      background: rgba(14, 20, 48, 0.55);
     }
 
     .card {
@@ -173,14 +216,32 @@
 <body>
   <main class="wrap">
     <section class="hero">
-      <h1>Записывайте кинопробы быстро — без напарника</h1>
-      <p class="lead">Сервис распознает, когда вы закончили свою реплику, и включает запись партнера, как если бы вы читали с напарником</p>
+      <h1>Записывайте топовые кинопробы без напарника —<br>быстро и удобно</h1>
+      <p class="lead">Вставьте текст сцены. Сервис разберёт роли, зачитает реплики партнёров, а вы просто играете свою роль в браузере.</p>
+    </section>
+
+    <section class="card">
+      <h2>Как это работает</h2>
+      <ol class="steps">
+        <li><span>1</span>Вставьте текст диалога или сцены</li>
+        <li><span>2</span>Выберите свою роль и запишите реплики партнёров</li>
+        <li><span>3</span>Начните репетицию — система переключит реплики автоматически</li>
+        <li><span>4</span>Послушайте готовую пробу целиком</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Демо</h2>
+      <div class="demo-placeholder">
+        Скоро здесь будет короткое видео с примером записи пробы.<br>
+        Пока можно сразу попробовать на своём тексте — это бесплатно.
+      </div>
     </section>
 
     <section class="card">
       <h2>Вставьте текст пробы</h2>
-      <p>Подойдет диалог, сцена или фрагмент сценария. Сервис автоматически разделит текст по ролям.</p>
-      <textarea id="scriptInput" placeholder="Вставьте сюда текст сценария..."></textarea>
+      <p>Подойдёт диалог, сцена или фрагмент сценария. Сервис автоматически разделит текст по ролям.</p>
+      <textarea id="scriptInput" placeholder="Вставьте сюда текст сценария..." autocomplete="off"></textarea>
       <div class="actions">
         <button id="processBtn" type="button">Обработать</button>
       </div>
@@ -190,10 +251,11 @@
   <div id="loadingScreen" class="loadingScreen" aria-hidden="true">
     <div class="loadingScreen__panel">
       <h2>Обрабатываем сценарий...</h2>
-      <p>Подождите немного, скоро продолжим.</p>
+      <p>Подождите немного, скоро продолжим</p>
     </div>
   </div>
 
   <script type="module" src="./app.js"></script>
+  <script type="module" src="./maintenanceBanner.js"></script>
 </body>
 </html>

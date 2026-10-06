@@ -1,0 +1,18 @@
+# Поисковикам: в выдачу — только главная (лендинг).
+# Остальные страницы — шаги приложения, не для органического поиска.
+
+User-agent: *
+Allow: /$
+Allow: /index.html
+
+Disallow: /blocks.html
+Disallow: /prep.html
+Disallow: /rehearsal.html
+Disallow: /result.html
+Disallow: /rehearsal-preview.html
+Disallow: /rehearsal-preview-v2.html
+Disallow: /landing-preview.html
+Disallow: /eos_test.html
+Disallow: /logs/
+
+Sitemap: https://fastroles.ru/sitemap.xml

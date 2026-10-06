@@ -94,6 +94,14 @@ function updateProgress(total) {
   proceedBtn.disabled = ready < total;
 }
 
+async function persistPartnerClip(segmentId, blob) {
+  try {
+    await storePartnerAudio(segmentId, blob);
+  } catch (e) {
+    console.error('Не удалось сохранить аудио сегмента в хранилище', segmentId, e);
+  }
+}
+
 function setSegmentReady(segmentId, total) {
   const header = document.querySelector(`.segment[data-id="${segmentId}"] .segment-status`);
   if (header) {
@@ -108,6 +116,7 @@ function storeAudio(segmentId, blob, source, total) {
   if (prev?.url) URL.revokeObjectURL(prev.url);
   const url = URL.createObjectURL(blob);
   audioStore.set(segmentId, { blob, url, source });
+  void persistPartnerClip(segmentId, blob);
   setSegmentReady(segmentId, total);
   return url;
 }
@@ -214,10 +223,6 @@ function renderSegments(segments) {
     .map(
       (seg) => `
       <div class="segment" data-id="${seg.id}">
-        <div class="segment-header">
-          <span class="segment-number">Сегмент ${seg.id + 1} · ${seg.lines.length} ${seg.lines.length === 1 ? "реплика" : "реплики"}</span>
-          <span class="segment-status pending">Ожидает записи</span>
-        </div>
         <div class="lines">
           ${seg.lines
             .map(

@@ -1,6 +1,7 @@
 __pycache__/
 .env
 venv/
+logs/
 exp.ipynb
 .ipynb_checkpoints/
 backend/.backend_venv/

@@ -3,3 +3,5 @@ speechmatics-rt==1.0.0
 python-dotenv>=1.0,<2
 # явная зависимость: speechmatics-rt импортирует typing_extensions.Self
 typing-extensions>=4.12.0
+# scripts/eos_log_to_excel.py
+openpyxl>=3.1,<4

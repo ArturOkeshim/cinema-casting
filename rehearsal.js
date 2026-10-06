@@ -1,9 +1,38 @@
 import { getPartnerAudio, getActorRecording, storeActorRecording, clearActorClips } from './audioDb.js';
 import { PersistentSpeechmaticsSession } from './recognizer.js';
-import { calcScore, adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
+import { adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
 import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
 import { extractSpeakable, escapeHtml, buildSequence } from './rehearsalSequence.js';
+import {
+  initEosLogSession,
+  beginActorTurn,
+  recordPartial,
+  recordFinal,
+  recordEndOfUtterance,
+  recordActorSmError,
+  logSmTokenFail,
+  logRehearsalEnd,
+  noteTokenRefresh,
+  noteActorSmResumeDelay,
+  getActorTurnSnapshot,
+  flushTurnEnd,
+  scoreHypothesisPair,
+  notePeakLenRatioTrim,
+} from './eosLog.js';
+import {
+  evaluateActorTurnCompletion,
+  readEouTuningFromUrl,
+  SM_EOU_SILENCE_TRIGGER_SEC,
+} from './eouPolicy.js';
+import {
+  evaluateActorTurnCompletionV2,
+  adaptiveMinLenRatioV2,
+  computeLenRatioV2,
+  refWordCount,
+} from './eouPolicyV2.js';
+import { isEosV2, resolveEosAlgoMode } from './eosConfig.js';
+import { reachGoal } from './analytics.js';
 
 initStageNav('rehearsal');
 
@@ -24,6 +53,15 @@ const TOKEN_REFRESH_BUFFER_MS = 120_000;
 /** Пауза между цифрами отсчёта перед стартом репетиции (мс) */
 const COUNTDOWN_STEP_MS = 1000;
 
+/**
+ * Пауза перед отправкой микрофона в Speechmatics после реплики партнёра.
+ * Снижает попадание хвоста из колонок в распознавание. Запись MediaRecorder идёт сразу.
+ * Наушники: часто хватает 150–250 ms; колонки/комната: 400–700 ms.
+ * Подбор на устройстве: rehearsal.html?smResumeDelay=500
+ */
+const ACTOR_SM_RESUME_DELAY_MS = 150;
+const ACTOR_SM_RESUME_DELAY_MAX_MS = 2000;
+
 /** Неотслеживаемый «забыл вкладку» + экономия Speechmatics: лимит одной сессии с момента старта репетиции. */
 const MAX_REHEARSAL_SESSION_MS = 30 * 60 * 1000;
 const SS_RESUME_AFTER_MAX = 'rehearsalResumeAfterMaxDuration';
@@ -38,11 +76,14 @@ let turnDone       = false; // защита от двойного вызова f
 /** Записанные реплики актёра: seqIdx → Blob (кэш; дублируется в IndexedDB) */
 const actorRecordings = new Map();
 
-/** Ссылка на текущий skip-handler для последующего removeEventListener */
+/** Ссылки на skip-handlers для последующего removeEventListener */
 let currentSkipHandler = null;
+let currentSkipKeyHandler = null;
+
+/** Настройки End-of-Utterance (тишина ~1 с); ?noEou=1 — выкл., ?eouSilence=0.9 */
+const eouTuning = readEouTuningFromUrl();
 
 // ── DOM ────────────────────────────────────────────────────────────────────
-const rehearsalView  = document.getElementById('rehearsalView');
 const actorBadgeEl   = document.getElementById('actorBadge');
 const stepCounterEl  = document.getElementById('stepCounter');
 const loadingSection = document.getElementById('loadingSection');
@@ -56,6 +97,7 @@ const startGate = document.getElementById('startGate');
 const rehearsalActiveUi = document.getElementById('rehearsalActiveUi');
 const startRehearsalBtn = document.getElementById('startRehearsalBtn');
 const startGateErrorEl = document.getElementById('startGateError');
+const skipHintEl = document.getElementById('skipHint');
 
 /** Сохраняются в bootstrap, нужны в startRecordingSession (словарь). */
 let rehearsalBlocks = [];
@@ -121,9 +163,55 @@ function renderScriptLane() {
             <span class="script-line__progress-fill"></span>
           </span>
         </span>
+        ${view.type === 'actor' ? '<span class="script-line__actions"></span>' : ''}
       </p>`;
     })
     .join('');
+}
+
+function mountSkipButtonToActorLine(index) {
+  if (!skipBtn || !scriptLaneEl) return;
+  const host = scriptLaneEl.querySelector(`.script-line.actor[data-index="${index}"] .script-line__actions`);
+  if (!host) {
+    skipBtn.hidden = true;
+    return;
+  }
+  host.appendChild(skipBtn);
+}
+
+function setSkipHintVisible(visible) {
+  if (skipHintEl) skipHintEl.hidden = !visible;
+}
+
+function unbindSkipHandlers() {
+  if (currentSkipHandler && skipBtn) {
+    skipBtn.removeEventListener('click', currentSkipHandler);
+  }
+  if (currentSkipKeyHandler) {
+    document.removeEventListener('keydown', currentSkipKeyHandler);
+  }
+  currentSkipHandler = null;
+  currentSkipKeyHandler = null;
+}
+
+function bindSkipHandlers(seqIdx) {
+  unbindSkipHandlers();
+  if (!skipBtn) return;
+
+  currentSkipHandler = () => {
+    if (!turnDone) finishActorTurn(seqIdx, 'manual');
+  };
+  currentSkipKeyHandler = (event) => {
+    if (turnDone || skipBtn.hidden) return;
+    if (event.code !== 'Space' && event.key !== ' ') return;
+    const tag = event.target?.tagName?.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable) return;
+    event.preventDefault();
+    finishActorTurn(seqIdx, 'manual');
+  };
+
+  skipBtn.addEventListener('click', currentSkipHandler);
+  document.addEventListener('keydown', currentSkipKeyHandler);
 }
 
 function applyScriptLineClasses(activeIdx) {
@@ -175,6 +263,11 @@ function calcActorLineProgress({
   return 0.55 * scorePart + 0.25 * lenPart + 0.2 * tailPart;
 }
 
+/** v2: прогресс = доля длины относительно адаптивного порога. */
+function calcActorLineProgressV2(lenRatio, minLenRatio) {
+  return Math.max(0, Math.min(1, lenRatio / Math.max(minLenRatio, 0.0001)));
+}
+
 function show(el) { el.hidden = false; }
 function hide(el) { el.hidden = true;  }
 
@@ -198,10 +291,8 @@ function startMaxDurationWatch() {
 function haltRehearsalDueToMaxDuration() {
   clearMaxDurationWatch();
   try {
-    if (currentSkipHandler) {
-      skipBtn.removeEventListener('click', currentSkipHandler);
-      currentSkipHandler = null;
-    }
+    unbindSkipHandlers();
+    setSkipHintVisible(false);
   } catch {
     /* ignore */
   }
@@ -256,6 +347,21 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Задержка resumeSending только если перед этим играл партнёр (не для первой реплики без партнёра). */
+function actorSmResumeDelayMs(seqIdx) {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('smResumeDelay');
+  if (raw != null && raw !== '') {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0 && n <= ACTOR_SM_RESUME_DELAY_MAX_MS) {
+      return n;
+    }
+  }
+  const prev = sequence[seqIdx - 1];
+  if (prev?.type !== 'partner') return 0;
+  return ACTOR_SM_RESUME_DELAY_MS;
+}
+
 /** После готовности микрофона и Speechmatics — 3, 2, 1, затем сцена. */
 async function showStartCountdown() {
   show(loadingSection);
@@ -279,6 +385,7 @@ function updateStepCounter() {
 async function ensureSmToken(opts = {}) {
   const now = Date.now();
   if (!opts.force && smToken && smTokenExpiresAtMs - now > 60_000) return true;
+  if (opts.force && smToken) noteTokenRefresh();
   const res = await fetch('/api/sm-token');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -405,6 +512,8 @@ async function advanceTo(idx) {
 // ── Партнёрский шаг ────────────────────────────────────────────────────────
 async function runPartnerStep(step) {
   hide(loadingSection);
+  unbindSkipHandlers();
+  setSkipHintVisible(false);
   if (skipBtn) skipBtn.hidden = true;
   setCurrentLineProgress(0);
   if (scriptLiveEl) scriptLiveEl.textContent = `Партнер говорит: ${stepToViewModel(step).text.slice(0, 180)}`;
@@ -448,9 +557,127 @@ async function runPartnerStep(step) {
   }).catch(next);
 }
 
+function emitActorTurnLog(finishReason) {
+  const snap = getActorTurnSnapshot();
+  if (!snap) return;
+
+  const hypRaw = finalSegments.join(' ').trim();
+  const hypWithPartialRaw = snap.lastPartialText
+    ? `${hypRaw} ${snap.lastPartialText}`.trim()
+    : hypRaw;
+
+  const finalPair = scoreHypothesisPair(snap.speakableText, hypRaw, snap.thresholds);
+  const partialPair = scoreHypothesisPair(snap.speakableText, hypWithPartialRaw, snap.thresholds);
+
+  flushTurnEnd({
+    finishReason,
+    seqIdx: snap.seqIdx,
+    actorTurnIndex: snap.actorTurnIndex,
+    speakableText: snap.speakableText,
+    thresholds: snap.thresholds,
+    hypothesisRaw: finalPair.hypothesisRaw,
+    hypothesisTrimmed: finalPair.hypothesisTrimmed,
+    trimWordsSkipped: finalPair.trimWordsSkipped,
+    trimApplied: finalPair.trimApplied,
+    metricsRaw: finalPair.metricsRaw,
+    metricsTrimmed: finalPair.metricsTrimmed,
+    failedGatesRaw: finalPair.failedGatesRaw,
+    failedGatesTrimmed: finalPair.failedGatesTrimmed,
+    gateMarginsRaw: finalPair.gateMarginsRaw,
+    gateMarginsTrimmed: finalPair.gateMarginsTrimmed,
+    passedRaw: finalPair.passedRaw,
+    passedTrimmed: finalPair.passedTrimmed,
+    hypothesisWithPartialRaw: partialPair.hypothesisRaw,
+    hypothesisWithPartialTrimmed: partialPair.hypothesisTrimmed,
+    metricsPartialRaw: partialPair.metricsRaw,
+    metricsPartialTrimmed: partialPair.metricsTrimmed,
+    partialWouldPassRaw: partialPair.passedRaw,
+    partialWouldPassTrimmed: partialPair.passedTrimmed,
+    failedGatesPartialTrimmed: partialPair.failedGatesTrimmed,
+    partialCount: snap.partialCount,
+    finalCount: snap.finalCount,
+    timeline: snap.timeline,
+    bestNearMissTrim: snap.bestNearMissTrim,
+    bestNearMissRaw: snap.bestNearMissRaw,
+    turnDurationMs: snap.turnDurationMs,
+    rehearsalDurationMs: snap.rehearsalDurationMs,
+    tokenRefreshCount: snap.tokenRefreshCount,
+    smError: snap.smError,
+    smConnected: Boolean(persistentSession),
+    smResumeDelayMs: snap.smResumeDelayMs,
+    recordingBytes: recordedChunks.reduce((n, c) => n + (c.size || 0), 0),
+    eouCount: snap.eouCount,
+    eouPeriods: snap.eouPeriods,
+    lastEouEvaluation: snap.lastEouEvaluation,
+    smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    eosAlgoMode: resolveEosAlgoMode(),
+    peakLenRatioTrim: snap.peakLenRatioTrim ?? 0,
+  });
+}
+
+/**
+ * v1: strict на final + relaxed на EoU. v2: только EoU + доля длины (eouPolicyV2.js).
+ * @param {'final'|'eou'} source
+ */
+function tryCompleteActorTurn(seqIdx, source, speakableText, thresholds) {
+  if (turnDone) return;
+  const snap = getActorTurnSnapshot();
+  if (!snap) return;
+
+  if (isEosV2()) {
+    if (source !== 'eou') return;
+
+    const hypRaw = snap.lastPartialText
+      ? `${finalSegments.join(' ')} ${snap.lastPartialText}`.trim()
+      : finalSegments.join(' ').trim();
+
+    const result = evaluateActorTurnCompletionV2({
+      speakableText,
+      hypothesisRaw: hypRaw,
+      peakLenRatioTrim: snap.peakLenRatioTrim ?? 0,
+      source: 'eou',
+      eouIndex: snap.eouCount + 1,
+    });
+
+    recordEndOfUtterance({
+      ...result.detail,
+      silenceTriggerSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    });
+
+    if (result.action === 'finish') {
+      setCurrentLineProgress(1);
+      finishActorTurn(seqIdx, result.finishReason);
+    }
+    return;
+  }
+
+  const hypRaw = finalSegments.join(' ').trim();
+  const result = evaluateActorTurnCompletion({
+    speakableText,
+    hypothesisRaw: hypRaw,
+    thresholds,
+    bestNearMissTrim: snap.bestNearMissTrim,
+    source,
+    eouIndex: snap.eouCount + (source === 'eou' ? 1 : 0),
+  });
+
+  if (source === 'eou') {
+    recordEndOfUtterance({
+      ...result.detail,
+      silenceTriggerSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    });
+  }
+
+  if (result.action === 'finish') {
+    setCurrentLineProgress(1);
+    finishActorTurn(seqIdx, result.finishReason);
+  }
+}
+
 // ── Реплика актёра ─────────────────────────────────────────────────────────
 async function runActorStep(step, seqIdx) {
   hide(loadingSection);
+  mountSkipButtonToActorLine(seqIdx);
   if (skipBtn) skipBtn.hidden = false;
 
   const speakableText = extractSpeakable(step.line.text);
@@ -461,25 +688,32 @@ async function runActorStep(step, seqIdx) {
   recordedChunks = [];
   turnDone = false;
 
-  const { minLenRatio, scoreThreshold } = adaptiveThresholds(speakableText);
+  const refWords = refWordCount(speakableText);
+  const thresholds = isEosV2()
+    ? { minLenRatio: adaptiveMinLenRatioV2(refWords), scoreThreshold: 0, eosMode: 'v2' }
+    : (() => {
+        const { minLenRatio, scoreThreshold } = adaptiveThresholds(speakableText);
+        return { minLenRatio, scoreThreshold, eosMode: 'v1' };
+      })();
+  beginActorTurn({ seqIdx, speakableText, thresholds });
 
   try {
     const ok = await ensureSmToken();
     if (!ok) {
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Готово» вручную.';
+      logSmTokenFail(seqIdx, 'empty token');
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Дальше» или пробел.';
       return;
     }
     await maybeReconnectPersistentIfTokenStale();
   } catch (e) {
     console.error('Failed to refresh Speechmatics token:', e);
-    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Готово» вручную.';
+    logSmTokenFail(seqIdx, String(e));
+    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Дальше» или пробел.';
     return;
   }
 
-  // Skip-кнопка — «Готово» вручную
-  if (currentSkipHandler) skipBtn.removeEventListener('click', currentSkipHandler);
-  currentSkipHandler = () => { if (!turnDone) finishActorTurn(seqIdx); };
-  skipBtn.addEventListener('click', currentSkipHandler);
+  bindSkipHandlers(seqIdx);
+  setSkipHintVisible(true);
 
   // MediaRecorder — запись реплики актёра
   const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
@@ -494,58 +728,101 @@ async function runActorStep(step, seqIdx) {
 
   persistentSession.setHandlers({
     onPartial(text) {
-      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${text}`;
-      const hyp = `${finalSegments.join(' ')} ${text}`.trim();
-      if (!hyp) return;
-      const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      const hypRaw = `${finalSegments.join(' ')} ${text}`.trim();
+      if (!hypRaw) return;
+
+      if (isEosV2()) {
+        const lenPack = computeLenRatioV2(speakableText, hypRaw);
+        notePeakLenRatioTrim(lenPack.lenRatioTrim);
+        if (scriptLiveEl) {
+          scriptLiveEl.textContent = `Live: ${lenPack.hypothesisTrimmed}`;
+        }
+        recordPartial(text, hypRaw, thresholds);
+        const snap = getActorTurnSnapshot();
+        const effectiveLen = Math.max(snap?.peakLenRatioTrim ?? 0, lenPack.lenRatioTrim);
+        setCurrentLineProgress(
+          calcActorLineProgressV2(effectiveLen, thresholds.minLenRatio)
+        );
+        return;
+      }
+
+      const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
+      recordPartial(text, hypRaw, thresholds);
+      const m = pair.metricsTrimmed;
       setCurrentLineProgress(
         calcActorLineProgress({
-          score,
-          lenRatio,
-          tail,
-          scoreThreshold,
-          minLenRatio,
+          score: m.score,
+          lenRatio: m.lenRatio,
+          tail: m.tail,
+          scoreThreshold: thresholds.scoreThreshold,
+          minLenRatio: thresholds.minLenRatio,
         })
       );
     },
     onFinal(text) {
       if (turnDone) return;
       finalSegments.push(text.trim());
-      const hyp = finalSegments.join(' ');
-      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${hyp}`;
+      const hypRaw = finalSegments.join(' ');
 
-      const { score, lenRatio, tail } = calcScore(speakableText, hyp);
+      if (isEosV2()) {
+        const lenPack = computeLenRatioV2(speakableText, hypRaw);
+        notePeakLenRatioTrim(lenPack.lenRatioTrim);
+        if (scriptLiveEl) scriptLiveEl.textContent = `Live: ${lenPack.hypothesisTrimmed}`;
+        recordFinal(text.trim(), hypRaw, thresholds);
+        const snap = getActorTurnSnapshot();
+        const effectiveLen = Math.max(snap?.peakLenRatioTrim ?? 0, lenPack.lenRatioTrim);
+        setCurrentLineProgress(
+          calcActorLineProgressV2(effectiveLen, thresholds.minLenRatio)
+        );
+        return;
+      }
+
+      const pair = scoreHypothesisPair(speakableText, hypRaw, thresholds);
+      if (scriptLiveEl) scriptLiveEl.textContent = `Live transcript: ${pair.hypothesisTrimmed}`;
+
+      recordFinal(text.trim(), hypRaw, thresholds);
+      const m = pair.metricsTrimmed;
       setCurrentLineProgress(
         calcActorLineProgress({
-          score,
-          lenRatio,
-          tail,
-          scoreThreshold,
-          minLenRatio,
+          score: m.score,
+          lenRatio: m.lenRatio,
+          tail: m.tail,
+          scoreThreshold: thresholds.scoreThreshold,
+          minLenRatio: thresholds.minLenRatio,
         })
       );
-      if (lenRatio >= minLenRatio && score >= scoreThreshold && tail >= MIN_TAIL_SCORE) {
-        setCurrentLineProgress(1);
-        finishActorTurn(seqIdx);
-      }
+      tryCompleteActorTurn(seqIdx, 'final', speakableText, thresholds);
+    },
+    onEndOfUtterance() {
+      if (turnDone || eouTuning.disableEou) return;
+      tryCompleteActorTurn(seqIdx, 'eou', speakableText, thresholds);
     },
     onError(e) {
       console.error('Persistent session error:', e);
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Готово» вручную.';
+      recordActorSmError(String(e));
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Дальше» или пробел.';
     },
   });
+
+  const smResumeDelayMs = actorSmResumeDelayMs(seqIdx);
+  noteActorSmResumeDelay(smResumeDelayMs);
+  if (smResumeDelayMs > 0) {
+    console.debug(`[rehearsal] SM resume delayed ${smResumeDelayMs}ms after partner`);
+    await delay(smResumeDelayMs);
+    if (turnDone) return;
+  }
   persistentSession.resumeSending();
 }
 
 // ── Завершение реплики актёра ──────────────────────────────────────────────
-function finishActorTurn(seqIdx) {
+function finishActorTurn(seqIdx, finishReason = 'manual') {
   if (turnDone) return;
+  emitActorTurnLog(finishReason);
   turnDone = true;
 
-  if (currentSkipHandler) {
-    skipBtn.removeEventListener('click', currentSkipHandler);
-    currentSkipHandler = null;
-  }
+  unbindSkipHandlers();
+  setSkipHintVisible(false);
 
   if (scriptLiveEl) scriptLiveEl.textContent = '✓ Готово';
   setCurrentLineProgress(1);
@@ -578,6 +855,8 @@ function finishActorTurn(seqIdx) {
 
 /** Снять микрофон и распознавание, зафиксировать завершение пробы, открыть страницу итога. */
 function finishRehearsalAndGoToResult() {
+  reachGoal('rehearsal_completed');
+  logRehearsalEnd({ completed: true, cursor: sequence.length });
   clearMaxDurationWatch();
   stopLineProgress();
   persistentSession?.destroy();
@@ -614,6 +893,7 @@ async function startRecordingSession() {
   hide(startGate);
   show(rehearsalActiveUi);
   showLoading('Инициализация…');
+  reachGoal('rehearsal_started');
 
   try {
     const ok = await ensureSmToken();
@@ -645,6 +925,8 @@ async function startRecordingSession() {
     stream: micStream,
     language: 'ru',
     additionalVocab: sessionAdditionalVocab,
+    enableEou: !eouTuning.disableEou,
+    eouSilenceSec: eouTuning.silenceSec,
     onDebug: (msg) => console.debug('[sm]', msg),
   });
   persistentSession.setHandlers({
@@ -668,6 +950,24 @@ async function startRecordingSession() {
     }
   }
   persistentSession.pauseSending();
+
+  const actorLineCount = sequence.filter((s) => s.type === 'actor').length;
+  const eosAlgoMode = resolveEosAlgoMode();
+  console.info('[rehearsal] EOS', {
+    algo: eosAlgoMode,
+    eouEnabled: !eouTuning.disableEou,
+    silenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    defaultSec: SM_EOU_SILENCE_TRIGGER_SEC,
+  });
+  initEosLogSession({
+    role,
+    actorLineCount,
+    vocabCount: sessionAdditionalVocab.length,
+    sequenceLength: sequence.length,
+    smEouEnabled: !eouTuning.disableEou,
+    smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,
+    eosAlgoMode,
+  });
 
   await showStartCountdown();
 

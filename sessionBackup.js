@@ -21,8 +21,36 @@ const FORMAT_ID = 'cinema-casting-session';
 /** v2 — ZIP с отдельными файлами; v1 — один JSON, audio в base64 */
 const FORMAT_VERSION_ZIP = 2;
 const FORMAT_VERSION_JSON_EMBED = 1;
+const SKIP_SCRIPT_PERSIST_ONCE_KEY = 'cinemaCasting.skipScriptPersistOnce';
 
 const FLOW_KEYS = [SCRIPT_TEXT_KEY, BLOCKS_KEY, ROLE_KEY, REHEARSAL_CURSOR_KEY];
+
+function isMobileSafari() {
+  const ua = navigator.userAgent || '';
+  const isAppleMobile = /iPhone|iPad|iPod/i.test(ua);
+  const isSafariEngine = /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+  return isAppleMobile && isSafariEngine;
+}
+
+function canShareFiles() {
+  if (!navigator.share) return false;
+  if (!navigator.canShare) return true;
+  try {
+    return navigator.canShare({ files: [new File(['x'], 'x.txt', { type: 'text/plain' })] });
+  } catch {
+    return false;
+  }
+}
+
+async function tryShareFile(file) {
+  if (!canShareFiles()) return false;
+  await navigator.share({
+    files: [file],
+    title: 'Cinema Casting: архив пробы',
+    text: 'Экспорт пробы',
+  });
+  return true;
+}
 
 function getStoredString(key) {
   return localStorage.getItem(key) ?? sessionStorage.getItem(key);
@@ -155,6 +183,7 @@ export async function applyJsonBackupEmbedded(data) {
   }
   const entries = audioEntriesFromEmbeddedV1(data.audio);
   await applySessionPayload(data.flow, entries);
+  return data.flow;
 }
 
 /**
@@ -198,6 +227,7 @@ export async function applyZipBackup(arrayBuffer) {
   await Promise.all(tasks);
 
   await applySessionPayload(data.flow, entries);
+  return data.flow;
 }
 
 /**
@@ -206,6 +236,8 @@ export async function applyZipBackup(arrayBuffer) {
 export async function downloadSessionBackupZip() {
   const flow = await buildFlowSnapshotObject();
   const clips = await getAllAudioClips();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const fileName = `cinema-casting-proba-${stamp}.zip`;
 
   const manifest = {
     format: FORMAT_ID,
@@ -227,16 +259,35 @@ export async function downloadSessionBackupZip() {
     compressionOptions: { level: 6 },
   });
 
+  // На мобильных браузерах (особенно iOS Safari) a[download] с blob URL
+  // может блокироваться, поэтому сначала пробуем системный share-sheet.
+  try {
+    const zipFile = new File([blob], fileName, { type: 'application/zip' });
+    const shared = await tryShareFile(zipFile);
+    if (shared) return;
+  } catch (e) {
+    // Отмена шеринга пользователем не должна прерывать fallback ниже.
+    console.warn('sessionBackup: share fallback failed', e);
+  }
+
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  a.href = url;
-  a.download = `cinema-casting-proba-${stamp}.zip`;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  if (isMobileSafari()) {
+    window.open(url, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return;
+  }
+
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /**
@@ -247,23 +298,35 @@ export function pickAndImportSessionBackup(opts = {}) {
   input.type = 'file';
   input.accept = 'application/zip,.zip,application/json,.json';
   input.setAttribute('aria-label', 'Файл бэкапа пробы');
+  input.style.position = 'fixed';
+  input.style.left = '-9999px';
+  input.style.width = '1px';
+  input.style.height = '1px';
+  document.body.appendChild(input);
   input.addEventListener('change', async () => {
     const file = input.files && input.files[0];
     input.remove();
     if (!file) return;
     try {
       const name = (file.name || '').toLowerCase();
+      let importedFlow = null;
       if (name.endsWith('.zip')) {
         const buf = await file.arrayBuffer();
-        await applyZipBackup(buf);
+        importedFlow = await applyZipBackup(buf);
       } else if (name.endsWith('.json')) {
         const text = await file.text();
         const data = JSON.parse(text);
-        await applyJsonBackupEmbedded(data);
+        importedFlow = await applyJsonBackupEmbedded(data);
       } else {
         throw new Error('Ожидается файл .zip или .json');
       }
-      window.location.reload();
+      try {
+        sessionStorage.setItem(SKIP_SCRIPT_PERSIST_ONCE_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+      if (opts.onSuccess) opts.onSuccess(importedFlow);
+      else window.location.reload();
     } catch (e) {
       const msg =
         e instanceof SyntaxError
