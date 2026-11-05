@@ -1,23 +1,56 @@
 # Backend Auth MVP
 
-## Run
+## Run (local)
 
 1. Open terminal in `backend`
 2. Activate venv
 3. Install deps: `pip install -r requirements.txt`
-4. Run migrations: `alembic upgrade head`
-5. Start API: `uvicorn app.main:app --reload`
-6. In a second terminal (repo root), start frontend: `python .\dev_server.py`
+4. Put secrets in `backend/.env` (see below)
+5. Run migrations: `alembic upgrade head`
+6. Start API: `uvicorn app.main:app --reload`
+7. In a second terminal (repo root), start frontend: `python .\dev_server.py`
 
 ## Environment (`backend/.env`)
 
-- `DATABASE_URL`
+Required for auth:
+
+- `DATABASE_URL` — example: `postgresql+psycopg://user:pass@localhost:5432/cinema-casting-db`
 - `SECRET_KEY`
+
+Optional:
+
 - `ALGORITHM` (default `HS256`)
-- `ACCESS_TOKEN_EXPIRE_MINUTES` (current: 7 days = `10080`)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` (default `30`; for long sessions use e.g. `10080` = 7 days)
 - `LOGIN_ATTEMPT_LIMIT` (default `5`)
 - `LOGIN_WINDOW_MINUTES` (default `10`)
 - `CORS_ALLOW_ORIGINS` (default `*` for local dev)
+- `SPEECHMATICS_API_KEY`, `TTL_SECONDS`
+- `VSEGPT_API_KEY`, `VSEGPT_BASE_URL`, `VSEGPT_MODEL`, `VSEGPT_TEMPERATURE`, `VSEGPT_MAX_TOKENS`
+
+Alembic reads **the same** `DATABASE_URL`. Do not put DB passwords in `alembic.ini`.
+
+## Migrations on a new Postgres (laptop or server)
+
+Postgres itself must already exist (empty database + user with rights). Then:
+
+```bash
+cd backend
+# .env already contains DATABASE_URL pointing at that database
+alembic upgrade head
+alembic current
+```
+
+`upgrade head` creates:
+
+- table `users` (email, password_hash, registration_datetime)
+- table `alembic_version` (Alembic remembers which migration ran last)
+
+You do **not** create `users` by hand with SQL.
+
+Useful checks:
+
+- `alembic current` — which revision is applied
+- `alembic history` — full chain of migrations
 
 ## Endpoints
 
