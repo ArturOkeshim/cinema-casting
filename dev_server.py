@@ -1,12 +1,13 @@
 import csv
 import json
 import os
-import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib import error, request
 from urllib.parse import unquote
 
 from dotenv import load_dotenv
+
+from yandexSttRelay import browser_ws_path, handle_stt_upgrade
 
 load_dotenv()
 
@@ -25,6 +26,8 @@ _FORBIDDEN_PATH_SEGMENTS = frozenset({
     ".venv",
     "__pycache__",
     "logs",
+    "proto",
+    "yandex_stt",
 })
 _EOS_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 _EOS_LOG_FILE = os.path.join(_EOS_LOG_DIR, "eos-debug.jsonl")
@@ -233,30 +236,17 @@ class AppHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        # WebSocket upgrade: browser → our relay → Yandex SpeechKit (gRPC).
+        path_only = self.path.split("?", 1)[0]
+        if path_only.rstrip("/") == browser_ws_path().rstrip("/"):
+            handle_stt_upgrade(self)
+            return
+
         if self.path == "/api/config":
             self._send_json(200, {
-                "speechmatics_key": os.getenv("SPEECHMATICS_API_KEY", ""),
+                "stt_provider": "yandex",
+                "stt_ws_path": browser_ws_path(),
             })
-            return
-        if self.path == "/api/sm-token":
-            api_key = os.getenv("SPEECHMATICS_API_KEY", "").strip()
-            if not api_key:
-                self._send_json(500, {"error": "SPEECHMATICS_API_KEY is not set in .env"})
-                return
-            try:
-                token = self._create_speechmatics_rt_token(api_key)
-            except Exception as exc:  # noqa: BLE001
-                self._send_json(502, {"error": f"Failed to create Speechmatics token: {exc}"})
-                return
-            ttl_seconds = 600
-            self._send_json(
-                200,
-                {
-                    "token": token,
-                    "ttl_seconds": ttl_seconds,
-                    "expires_at_ms": int((time.time() + ttl_seconds) * 1000),
-                },
-            )
             return
         if _is_forbidden_static_path(self.path):
             self.send_error(403, "Forbidden")
@@ -276,23 +266,6 @@ class AppHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
-    def _create_speechmatics_rt_token(self, api_key: str) -> str:
-        req = request.Request(
-            url="https://mp.speechmatics.com/v1/api_keys?type=rt",
-            data=json.dumps({"ttl": 600}).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-        with request.urlopen(req, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        token = (payload.get("key_value") or "").strip()
-        if not token:
-            raise RuntimeError("Speechmatics returned empty temporary token")
-        return token
 
     def _append_eos_log_events(self, events: list) -> None:
         os.makedirs(_EOS_LOG_DIR, exist_ok=True)

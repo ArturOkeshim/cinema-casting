@@ -1,5 +1,5 @@
 import { getPartnerAudio, getActorRecording, storeActorRecording, clearActorClips } from './audioDb.js';
-import { PersistentSpeechmaticsSession } from './recognizer.js';
+import { PersistentYandexSttSession } from './recognizer.js';
 import { adaptiveThresholds, MIN_TAIL_SCORE } from './scorer.js';
 import { initStageNav } from './stageNav.js';
 import { loadBlocks, loadRole, loadRehearsalCursor, saveRehearsalCursor, clearRehearsalCursor } from './flowState.js';
@@ -11,9 +11,7 @@ import {
   recordFinal,
   recordEndOfUtterance,
   recordActorSmError,
-  logSmTokenFail,
   logRehearsalEnd,
-  noteTokenRefresh,
   noteActorSmResumeDelay,
   getActorTurnSnapshot,
   flushTurnEnd,
@@ -39,22 +37,15 @@ initStageNav('rehearsal');
 // ── Состояние ──────────────────────────────────────────────────────────────
 let sequence   = [];   // [{ type:'partner'|'actor', segId?, lines?, line? }]
 let currentIdx = 0;
-let smToken    = '';
-let smTokenExpiresAtMs = 0;
-let sessionAdditionalVocab = [];
-
 let micStream      = null;  // единственный getUserMedia за весь сеанс
-/** Одно подключение Speechmatics на всю репетицию (аудио в сокет только на репликах актёра) */
+/** Одно подключение SpeechKit на всю репетицию (аудио в сокет только на репликах актёра) */
 let persistentSession = null;
-
-/** За сколько до истечения JWT переподключаться (мс) */
-const TOKEN_REFRESH_BUFFER_MS = 120_000;
 
 /** Пауза между цифрами отсчёта перед стартом репетиции (мс) */
 const COUNTDOWN_STEP_MS = 1000;
 
 /**
- * Пауза перед отправкой микрофона в Speechmatics после реплики партнёра.
+ * Пауза перед отправкой микрофона в SpeechKit после реплики партнёра.
  * Снижает попадание хвоста из колонок в распознавание. Запись MediaRecorder идёт сразу.
  * Наушники: часто хватает 150–250 ms; колонки/комната: 400–700 ms.
  * Подбор на устройстве: rehearsal.html?smResumeDelay=500
@@ -62,7 +53,7 @@ const COUNTDOWN_STEP_MS = 1000;
 const ACTOR_SM_RESUME_DELAY_MS = 150;
 const ACTOR_SM_RESUME_DELAY_MAX_MS = 2000;
 
-/** Неотслеживаемый «забыл вкладку» + экономия Speechmatics: лимит одной сессии с момента старта репетиции. */
+/** Неотслеживаемый «забыл вкладку»: лимит одной сессии с момента старта репетиции. */
 const MAX_REHEARSAL_SESSION_MS = 30 * 60 * 1000;
 const SS_RESUME_AFTER_MAX = 'rehearsalResumeAfterMaxDuration';
 const SS_TIMEOUT_BANNER = 'rehearsalTimeoutBanner';
@@ -362,7 +353,7 @@ function actorSmResumeDelayMs(seqIdx) {
   return ACTOR_SM_RESUME_DELAY_MS;
 }
 
-/** После готовности микрофона и Speechmatics — 3, 2, 1, затем сцена. */
+/** После готовности микрофона и SpeechKit — 3, 2, 1, затем сцена. */
 async function showStartCountdown() {
   show(loadingSection);
   loadingSection.classList.add('loading-section--countdown');
@@ -380,106 +371,6 @@ function updateStepCounter() {
   const total = sequence.filter(s => s.type === 'actor').length;
   const done  = actorRecordings.size;
   stepCounterEl.textContent = `${done} / ${total} реплик`;
-}
-
-async function ensureSmToken(opts = {}) {
-  const now = Date.now();
-  if (!opts.force && smToken && smTokenExpiresAtMs - now > 60_000) return true;
-  if (opts.force && smToken) noteTokenRefresh();
-  const res = await fetch('/api/sm-token');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  smToken = (data.token || '').trim();
-  smTokenExpiresAtMs = Number.isFinite(data.expires_at_ms) ? data.expires_at_ms : 0;
-  return Boolean(smToken);
-}
-
-async function maybeReconnectPersistentIfTokenStale() {
-  const now = Date.now();
-  if (!persistentSession) return;
-  if (smTokenExpiresAtMs - now > TOKEN_REFRESH_BUFFER_MS) return;
-  await ensureSmToken({ force: true });
-  if (!smToken) throw new Error('empty token');
-  persistentSession.setJwt(smToken);
-  await persistentSession.reconnect(smToken);
-}
-
-function collectActorSpeakableLines(blocks, role) {
-  return blocks
-    .filter((block) => block.role === role)
-    .map((block) => extractSpeakable(block.text))
-    .filter(Boolean);
-}
-
-function extractJsonBlock(text) {
-  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch) return fencedMatch[1].trim();
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start !== -1 && end !== -1 && end > start) {
-    return text.slice(start, end + 1);
-  }
-  return text.trim();
-}
-
-function sanitizeGeneratedVocab(raw) {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set();
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const content = typeof item.content === 'string' ? item.content.trim() : '';
-      if (!content || seen.has(content.toLowerCase())) return null;
-      seen.add(content.toLowerCase());
-      const result = { content };
-      if (Array.isArray(item.sounds_like)) {
-        const soundsLike = item.sounds_like
-          .filter((value) => typeof value === 'string')
-          .map((value) => value.trim())
-          .filter(Boolean)
-          .slice(0, 5);
-        if (soundsLike.length) {
-          result.sounds_like = soundsLike;
-        }
-      }
-      return result;
-    })
-    .filter(Boolean)
-    .slice(0, 120);
-}
-
-async function generateSessionVocab(actorLines) {
-  if (!actorLines.length) return [];
-
-  const prompt = [
-    'Ты готовишь custom dictionary для Speechmatics Realtime.',
-    'На входе очищенные реплики актера на русском языке.',
-    'Нужно вернуть только JSON-массив объектов additional_vocab.',
-    'Формат каждого элемента: {"content":"..."} или {"content":"...","sounds_like":["..."]}.',
-    'Включай только то, что реально может плохо распознаваться: имена, фамилии, редкие слова, необычные обращения, характерные междометия.',
-    'Не включай обычные частотные слова.',
-    'Не добавляй объяснений, markdown и комментариев.',
-    'Держи словарь компактным: максимум 80 элементов.',
-    'Предпочитай content длиной до 4 слов.',
-    '',
-    'Реплики актера:',
-    ...actorLines.map((line, index) => `${index + 1}. ${line}`),
-  ].join('\n');
-
-  const response = await fetch('/api/llm', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  const data = await response.json();
-  const content = typeof data.content === 'string' ? data.content : '';
-  const jsonBlock = extractJsonBlock(content);
-  const parsed = JSON.parse(jsonBlock);
-  return sanitizeGeneratedVocab(parsed);
 }
 
 async function blobForActorStep(seqIdx) {
@@ -697,21 +588,6 @@ async function runActorStep(step, seqIdx) {
       })();
   beginActorTurn({ seqIdx, speakableText, thresholds });
 
-  try {
-    const ok = await ensureSmToken();
-    if (!ok) {
-      logSmTokenFail(seqIdx, 'empty token');
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Не удалось получить временный токен. Нажмите «Дальше» или пробел.';
-      return;
-    }
-    await maybeReconnectPersistentIfTokenStale();
-  } catch (e) {
-    console.error('Failed to refresh Speechmatics token:', e);
-    logSmTokenFail(seqIdx, String(e));
-    if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка обновления токена. Нажмите «Дальше» или пробел.';
-    return;
-  }
-
   bindSkipHandlers(seqIdx);
   setSkipHintVisible(true);
 
@@ -801,7 +677,7 @@ async function runActorStep(step, seqIdx) {
     onError(e) {
       console.error('Persistent session error:', e);
       recordActorSmError(String(e));
-      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка Speechmatics. Нажмите «Дальше» или пробел.';
+      if (scriptLiveEl) scriptLiveEl.textContent = '⚠ Ошибка распознавания. Нажмите «Дальше» или пробел.';
     },
   });
 
@@ -885,31 +761,14 @@ function showStartGateError(html) {
   if (startRehearsalBtn) startRehearsalBtn.hidden = true;
 }
 
-/** Токен, микрофон, Speechmatics, первый шаг — после кнопки «Начать запись пробы». */
+/** Микрофон, SpeechKit, первый шаг — после кнопки «Начать запись пробы». */
 async function startRecordingSession() {
-  const blocks = rehearsalBlocks;
   const role = rehearsalRole;
 
   hide(startGate);
   show(rehearsalActiveUi);
   showLoading('Инициализация…');
   reachGoal('rehearsal_started');
-
-  try {
-    const ok = await ensureSmToken();
-    if (!ok) throw new Error('empty token');
-  } catch (e) {
-    showLoading(`Ошибка получения токена Speechmatics: ${e.message}`);
-    return;
-  }
-
-  showLoading('Собираем словарь сложных слов для распознавания…');
-  try {
-    sessionAdditionalVocab = await generateSessionVocab(collectActorSpeakableLines(blocks, role));
-  } catch (e) {
-    console.warn('Failed to generate session additional_vocab:', e);
-    sessionAdditionalVocab = [];
-  }
 
   showLoading('Запрашиваем доступ к микрофону…');
   try {
@@ -919,35 +778,23 @@ async function startRecordingSession() {
     return;
   }
 
-  showLoading('Подключение к Speechmatics (одна сессия на всю репетицию)…');
-  persistentSession = new PersistentSpeechmaticsSession({
-    jwtToken: smToken,
+  showLoading('Подключение к распознаванию (SpeechKit)…');
+  persistentSession = new PersistentYandexSttSession({
     stream: micStream,
-    language: 'ru',
-    additionalVocab: sessionAdditionalVocab,
-    enableEou: !eouTuning.disableEou,
-    eouSilenceSec: eouTuning.silenceSec,
-    onDebug: (msg) => console.debug('[sm]', msg),
+    onDebug: (msg) => console.debug('[stt]', msg),
   });
   persistentSession.setHandlers({
     onPartial: () => {},
     onFinal: () => {},
-    onError: (e) => console.error('Speechmatics (idle):', e),
+    onError: (e) => console.error('SpeechKit (idle):', e),
   });
   try {
     await persistentSession.connect();
   } catch (e) {
-    console.warn('Persistent connect failed, retry with fresh token', e);
-    try {
-      await ensureSmToken({ force: true });
-      persistentSession.setJwt(smToken);
-      await persistentSession.connect();
-    } catch (e2) {
-      showLoading(
-        `Не удалось подключиться к Speechmatics: ${e2.message}. Проверь сеть и ключ в .env, затем обнови страницу.`
-      );
-      return;
-    }
+    showLoading(
+      `Не удалось подключиться к распознаванию: ${e.message}. Проверь сеть и YANDEX_API_KEY в .env, затем обнови страницу.`
+    );
+    return;
   }
   persistentSession.pauseSending();
 
@@ -962,7 +809,7 @@ async function startRecordingSession() {
   initEosLogSession({
     role,
     actorLineCount,
-    vocabCount: sessionAdditionalVocab.length,
+    vocabCount: 0,
     sequenceLength: sequence.length,
     smEouEnabled: !eouTuning.disableEou,
     smEouSilenceSec: eouTuning.disableEou ? 0 : eouTuning.silenceSec,

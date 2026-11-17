@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package speechkit.stt.v3;
+
+// Минимальный срез SpeechKit STT v3. Номера полей совпадают с cloudapi.
+
+service Recognizer {
+  rpc RecognizeStreaming(stream StreamingRequest) returns (stream StreamingResponse);
+}
+
+message TextNormalizationOptions {
+  enum TextNormalization {
+    TEXT_NORMALIZATION_UNSPECIFIED = 0;
+    TEXT_NORMALIZATION_ENABLED = 1;
+    TEXT_NORMALIZATION_DISABLED = 2;
+  }
+  TextNormalization text_normalization = 1;
+  bool profanity_filter = 2;
+  bool literature_text = 3;
+}
+
+message DefaultEouClassifier {
+  enum EouSensitivity {
+    EOU_SENSITIVITY_UNSPECIFIED = 0;
+    DEFAULT = 1;
+    HIGH = 2;
+  }
+  EouSensitivity type = 1;
+  int64 max_pause_between_words_hint_ms = 2;
+}
+
+message EouClassifierOptions {
+  oneof Classifier {
+    DefaultEouClassifier default_classifier = 1;
+  }
+}
+
+message RawAudio {
+  enum AudioEncoding {
+    AUDIO_ENCODING_UNSPECIFIED = 0;
+    LINEAR16_PCM = 1;
+  }
+  AudioEncoding audio_encoding = 1;
+  int64 sample_rate_hertz = 2;
+  int64 audio_channel_count = 3;
+}
+
+message AudioFormatOptions {
+  oneof AudioFormat {
+    RawAudio raw_audio = 1;
+  }
+}
+
+message LanguageRestrictionOptions {
+  enum LanguageRestrictionType {
+    LANGUAGE_RESTRICTION_TYPE_UNSPECIFIED = 0;
+    WHITELIST = 1;
+    BLACKLIST = 2;
+  }
+  LanguageRestrictionType restriction_type = 1;
+  repeated string language_code = 2;
+}
+
+message RecognitionModelOptions {
+  enum AudioProcessingType {
+    AUDIO_PROCESSING_TYPE_UNSPECIFIED = 0;
+    REAL_TIME = 1;
+    FULL_DATA = 2;
+  }
+  string model = 1;
+  AudioFormatOptions audio_format = 2;
+  TextNormalizationOptions text_normalization = 3;
+  LanguageRestrictionOptions language_restriction = 4;
+  AudioProcessingType audio_processing_type = 5;
+}
+
+message StreamingOptions {
+  RecognitionModelOptions recognition_model = 1;
+  EouClassifierOptions eou_classifier = 2;
+}
+
+message AudioChunk {
+  bytes data = 1;
+}
+
+message StreamingRequest {
+  oneof Event {
+    StreamingOptions session_options = 1;
+    AudioChunk chunk = 2;
+  }
+}
+
+message Word {
+  string text = 1;
+  int64 start_time_ms = 2;
+  int64 end_time_ms = 3;
+}
+
+message Alternative {
+  repeated Word words = 1;
+  string text = 2;
+  int64 start_time_ms = 3;
+  int64 end_time_ms = 4;
+  double confidence = 5;
+}
+
+message AlternativeUpdate {
+  repeated Alternative alternatives = 1;
+}
+
+message AudioCursors {
+  int64 received_data_ms = 1;
+  int64 reset_time_ms = 2;
+  int64 partial_time_ms = 3;
+  int64 final_time_ms = 4;
+  int64 final_index = 5;
+  int64 eou_time_ms = 6;
+}
+
+enum CodeType {
+  CODE_TYPE_UNSPECIFIED = 0;
+  WORKING = 1;
+  WARNING = 2;
+  CLOSED = 3;
+}
+
+message FinalRefinement {
+  int64 final_index = 1;
+  oneof Type {
+    AlternativeUpdate normalized_text = 2;
+  }
+}
+
+message StatusCode {
+  CodeType code_type = 1;
+  string message = 2;
+}
+
+message EouUpdate {
+  int64 time_ms = 2;
+}
+
+message SessionUuid {
+  string uuid = 1;
+  string user_request_id = 2;
+}
+
+message StreamingResponse {
+  SessionUuid session_uuid = 1;
+  AudioCursors audio_cursors = 2;
+  int64 response_wall_time_ms = 3;
+  oneof Event {
+    AlternativeUpdate partial = 4;
+    AlternativeUpdate final = 5;
+    EouUpdate eou_update = 6;
+    FinalRefinement final_refinement = 7;
+    StatusCode status_code = 8;
+  }
+}
